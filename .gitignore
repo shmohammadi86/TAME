@@ -1,0 +1,11 @@
+output/
+refs/
+temp/
+results/
+*.tsv
+*~
+*.o
+*.xls
+*.xlsx
+*.png
+tri-match
