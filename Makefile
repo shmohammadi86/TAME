@@ -1,18 +1,31 @@
 CXX=g++
 INCLUDE=-I./include -I./armadillo/include
 LIB_FLAGS=-lblas -llapack #-L./armadillo -larmadillo
-CXXFLAGS=$(INCLUDE) -march=native -g -O3 -funroll-loops -msse2  -Wall -Wno-write-strings
+CXXFLAGS=$(INCLUDE) -march=native -g -O3 -funroll-loops -msse2  -Wall -Wno-write-strings -fopenmp
 SRC=src/main.cc src/graph.cc src/io.cc src/triangle.cc src/tensor.cc
 OBJ=$(SRC:.cc=.o)
 PROGRAM=tri-match
+bMatch_OBJECTS = \
+	src/bMatch/mtxReader.o \
+	src/bMatch/bSuitor.o \
+	src/bMatch/bSuitorD.o \
+	src/bMatch/PG.o \
+	src/bMatch/localDom.o \
+	src/bMatch/PGDP.o \
+	src/bMatch/Node.cpp \
 
-all : $(PROGRAM)
+	
+all : $(PROGRAM) message
 
 src/%.o: src/%.cc src/%.h
 	$(CXX) $(CXXFLAGS) -c -o $@  $<
 
-$(PROGRAM): $(OBJ) 
-	$(CXX) $(CXXFLAGS)  -o $@ $(OBJ) $(LIB_FLAGS)	
+src/bMatch/%.o: src/bMatch/%.cc
+	$(CXX) $(CXXFLAGS) -c -o $@  $<
+
+
+$(PROGRAM): $(OBJ) $(bMatch_OBJECTS)
+	$(CXX) $(CXXFLAGS)  -o $@ $(OBJ) $(bMatch_OBJECTS) $(LIB_FLAGS)	
 
 .PHONY: clean ar
 
@@ -22,3 +35,6 @@ clean:
 ar:
 	make clean
 	tar -czvf ../$(PROGRAM)"(`date`)".tar.gz *
+
+message:
+	echo "Executable: $(PROGRAM) has been created"	
