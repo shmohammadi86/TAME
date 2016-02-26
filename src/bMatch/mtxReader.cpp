@@ -104,7 +104,7 @@ bool CSR::DenseVec2CSR(double* x, int m, int n) {
 	for(i = 0; i < m; i++) {
 		for(j = 0; j < n; j++) {
 			if (i == j) continue;
-			idx = i*m + j;
+			idx = i*n + j;
 			if(std::numeric_limits<double>::epsilon() < fabs(x[idx])) {
 				nnz++;
 			}
@@ -121,7 +121,7 @@ bool CSR::DenseVec2CSR(double* x, int m, int n) {
 	for(i = 0; i < m; i++) {
 		for(j = 0; j < n; j++) {
 			if (i == j) continue;
-			idx = i*m + j;
+			idx = i*n + j;
 
 			if(std::numeric_limits<double>::epsilon() < fabs(x[idx])) {
 	            graphCRSIdx[i].push_back(j+sVer);
