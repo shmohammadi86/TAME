@@ -512,8 +512,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 	this->n = n1*n2;  number of edges in L
 */
 	printf("Post-processing ... \n");
-	int bMatching_alg = 13;
-    bool verbose = false;
+	int bMatching_alg = 2;
+    bool verbose = true;
 	int fixed_b = max(0, k - 1);
 
 	register unsigned int i, j;
@@ -553,7 +553,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 		align->left_project[align->right_match[i]] = align->left_match[i];
 		align->right_project[align->left_match[i]] = align->right_match[i];
 
-		temp_x[align->left_match[i]*this->n2+align->right_match[i]] = 0;
+		//temp_x[align->left_match[i]*this->n2+align->right_match[i]] = 0;
 	}
 
 
@@ -569,7 +569,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 
 		if(card>fixed_b)
 			b[i]=fixed_b;
-		else b[i]=max(1, card);
+		else b[i]=card;
     }
 
 
@@ -595,20 +595,20 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
     if(bMatching_alg==0 || bMatching_alg== 5)
         S1=(Node*)malloc(G.nVer*sizeof(Node));      //Heap data structure
     Node* S=(Node*)malloc(G.nVer*sizeof(Node));      //Heap data structure
-    printf("Size = %d, sum = %d\n", G.nVer, this->n1+this->n2);
+
+	#pragma omp parallel for
 	for(i = 0; i < (unsigned int)G.nVer; i++)
 	{
-		S[i].heap=(Info*)malloc(max(1, b[i])*sizeof(Info));      //Each heap of size b
-		S[i].curSize = 0;
+		S[i].heap=(Info*)malloc(b[i]*sizeof(Info));      //Each heap of size b
 		if(bMatching_alg==5 || bMatching_alg ==0)
-			S1[i].heap=(Info*)malloc(max(1, b[i])*sizeof(Info));      //Each heap of size b
+			S1[i].heap=(Info*)malloc(b[i]*sizeof(Info));      //Each heap of size b
 	}
 
     stack_pcl<Param>* St=NULL;
     int* order=NULL;
     float M[2];
     int best;
-	int stepM = 3; // step size for partial sorting
+	int stepM = 1; // step size for partial sorting
 
     /*******************************
      *    Other datastructures
@@ -665,43 +665,37 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 
 
    printf("\tAdding bMatches to H preferred set\n"); fflush(stdout);
-	for (i = 0; i < this->n1; i++) {
-        for(j = 0; j < (unsigned int) S[i].curSize; j++) {
-    		align->PrefH[i].push_back((S[i].heap[j].id) - this->n1);
+	for (i = 0; i < align->match_no; i++) {
+        for(j = 0; j < (unsigned int) S[align->left_match[i]].curSize; j++) {
+    		align->PrefH[i].push_back((S[align->left_match[i]].heap[j].id) - this->n1);
         }
 	}
 
 
     printf("\tAdding bMatches to G preferred set\n"); fflush(stdout);
-	for (i = 0; i < this->n2; i++) {
-        for(j = 0; j < (unsigned int) S[i+this->n1].curSize; j++) {
-    		align->PrefG[i].push_back(S[i+this->n1].heap[j].id);
+	for (i = 0; i < align->match_no; i++) {
+        for(j = 0; j < (unsigned int) S[align->right_match[i]+this->n1].curSize; j++) {
+    		align->PrefG[i].push_back(S[align->right_match[i]+this->n1].heap[j].id);
         }
 	}
 
 
 	/*for(i = 0; i < align->match_no; i++) {
 		printf("Mi[%d] =  %d (%s) in G\n", i, align->left_match[i], this->G->getVertexName(align->left_match[i]));
-		for(j = 0; j < align->PrefH[align->left_match[i]].size(); j++) {
-			printf("\tVertex %d (%s) in H\n", align->PrefH[align->left_match[i]][j], this->H->getVertexName(align->PrefH[align->left_match[i]][j]));
+		for(j = 0; j < align->PrefH[i].size(); j++) {
+			printf("\tVertex %d (%s) in H\n", align->PrefH[i][j], this->H->getVertexName(align->PrefH[i][j]));
 		}
 	}
 
 
 	for(i = 0; i < align->match_no; i++) {
 		printf("Mj[%d] =  %d (%s) in H\n", i, align->right_match[i], this->H->getVertexName(align->right_match[i]));
-		for(j = 0; j < align->PrefG[align->right_match[i]].size(); j++) {
-			printf("\tVertex %d (%s) in G\n", align->PrefG[align->right_match[i]][j], this->G->getVertexName(align->PrefG[align->right_match[i]][j]));
+		for(j = 0; j < align->PrefG[i].size(); j++) {
+			printf("\tVertex %d (%s) in G\n", align->PrefG[i][j], this->G->getVertexName(align->PrefG[i][j]));
 		}
 	}*/
 
 
-	// Prune Pref sets to only have homogenously high SeqSim entries (remove ones that are significantly lower that the others)
-
-	for(int it = 0; it < max_iter; it++) {
-
-
-	}
 	return align;
 }
 
@@ -710,10 +704,10 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	register unsigned int i, j;
 	char x_path[1024];
 	
-	this->best_x = vec(x0, this->n);
 	this->x_vec = vec(x0, this->n); //.set_size(this->n, 1);
 	this->x_hat_vec.set_size(this->n, 1);
 	this->w_vec.set_size(this->n, 1);
+	this->best_x = this->x_vec;
 	
 	this->X.set_size(this->n1, this->n2);
 
@@ -894,10 +888,10 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	fclose(fd);
 
 
-	alignment* result = postprocess(best_x.memptr(), 1, 10);
+	alignment* result = postprocess(best_x.memptr(), 100, 4);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 
-/*	vector<int> MI, MJ;
+	vector<int> MI, MJ;
 	for(i = 0; i < myStats.num_matches; i++) {
 		MI.push_back(mi[i]);
 		MJ.push_back(mj[i]);
@@ -911,7 +905,7 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 		Tsum += curr_sum;
 	}
 	printf("Total sum = %ld\n", Tsum);
-*/
+
 
 	res->flag = 0;
 	return res;

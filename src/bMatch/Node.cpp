@@ -5,6 +5,7 @@
 #include <time.h>
 #include <getopt.h>
 #include <float.h>
+#include <string.h>
 
 using namespace std;
 
@@ -632,9 +633,11 @@ int custom_sort_optimized(Edge* verInd, int start, int end, int step, int* order
                             else
                                 if( p < r )
                                 {
-				    *(long long int *)(&temp) = *(long long int *)(verInd + p);
+/*				    *(long long int *)(&temp) = *(long long int *)(verInd + p);*/
+				    memcpy(&temp, verInd + r, sizeof(long long int));
 				    *(long long int *)(verInd + p) = *(long long int *)(verInd + r);
-				    *(long long int *)(verInd + r) = *(long long int *)(&temp);
+/*				    *(long long int *)(verInd + r) = *(long long int *)(&temp);*/
+				    memcpy(verInd + r, &temp, sizeof(long long int));
                                 }
                         }
 #endif

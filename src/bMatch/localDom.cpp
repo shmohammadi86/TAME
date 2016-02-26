@@ -114,6 +114,7 @@ void localDom(CSR* G, Node* S, int* b, int* start,
                 int cur=S[i].curSize-1;
                 int nbor=S[i].heap[cur].id;
 
+                //printf("nbor = %d, curr_size = %d, buff = %x\n", nbor, S[nbor].curSize, S[nbor].heap); fflush(stdout);
                 if(S[nbor].find_id(i))
                     b[i]--;
                 else

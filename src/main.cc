@@ -15,20 +15,22 @@ void print_usage (FILE * stream, int exit_code)
 	fprintf (stream, "Usage: tri-match -G <1st_net> -H <2nd_net> [optional args]\n ");
     fprintf (stream,
 		 "\t-h	--help\t\t\t\tDisplay this usage information. \n"
-		 "\t-t	--type <isorank|tab|smat>\tType of input files (default=isorank)\n"
-		 "\t-G	--first <1st_net>\t\tName of the first input network.\n"
-		 "\t-H	--second <1st_net>\t\tName of the second input network.\n"		 
+		 "\t-t	--type <tab|isorank|smat>\tType of input files (default=tab)\n"
+		 "\t-G	--first <1st_net>\t\tPath to the first input network.\n"
+		 "\t-H	--second <1st_net>\t\tPath to the second input network.\n"
 		 "\t-S	--seq <seq_file>\t\tPath to the SeqSim file(default="").\n" 
-		 "\t-o	--output <output_folder>\tOutput folder (default=./output/).\n" 		 
-		 
-		 "\t-x 	--x0 <uniform|random|seqsim>\tInitialization type (default=uniform).\n" 
-		 "\t-i 	--iter <its>\t\t\tNumber of iteractions (default=100).\n" 
+		 "\t-o	--output <output_folder>\tOutput folder (default=output/).\n"
 
-		 "\t-a 	--alpha <weight>\t\trelative wieght of SeqSim/Triangles (default = 1.0).\n" 		
+		 "\t-Y	--sparsity <level>\t\tSparsity level (0, 1, and 2).\n"
+
+    	 "\t-C	--continue <X.txt>\tContinues iterations starting from matrix stored in file.\n"
+		 "\t-x 	--x0 <uniform|random|seqsim>\tInitialization type (default=uniform).\n" 
+		 "\t-i 	--iter <its>\t\t\tNumber of iterations (default=100).\n"
+
+		 "\t-a 	--alpha <weight>\t\trelative weight of SeqSim/Triangles (default = 1.0).\n"
 		 "\t-b 	--beta <shift_val>\t\tShift value (default = 0.0).\n" 
 		 "\t-e 	--epsilon <eps>\t\t\tepsilon threshold (default=1e-16).\n" 		 
 		 
-		 "\t-Y	--sparsity <level>\t\tSparsity level (0, 1, and 2).\n"
 		 
 	);	     
     exit (exit_code);
@@ -39,7 +41,7 @@ int main(int argc, char **argv) {
 	
 
   int next_option;
-  const char *const short_options = "hG:H:t:S:o:x:i:a:b:e:Y:";
+  const char *const short_options = "hG:H:t:S:o:x:i:a:b:e:Y:C:";
   const struct option long_options[] = {
 		{"help",   0, NULL, 'h'},
 		{"first",  1, NULL, 'G'},
@@ -53,10 +55,11 @@ int main(int argc, char **argv) {
 		{"beta",	1, NULL, 'b'},
 		{"epsilon",   1, NULL, 'e'},		
 		{"sparsity", 1, NULL, 'Y'},
+		{"continue", 1, NULL, 'C'},
 		{NULL,     0, NULL,  0 }		
 	};
-		
-	char first[1024] = "", second[1024] = "", output_path[1024] = "output";
+
+	char first[1024] = "", second[1024] = "", output_path[1024] = "output", prior_output[1024] = "";
 	FileType file_type = Tab;
 	InitType init_type = SeqSim;
 	Sparsity_Type sparsity_type = NoSparsity;
@@ -88,7 +91,11 @@ int main(int argc, char **argv) {
 			case 'o':
 				strcpy(output_path, optarg);
 	    		break;
-				
+
+			case 'C':
+				strcpy(prior_output, optarg);
+	    		break;
+
 			case 't':
 				if(!strcmp(optarg, "isorank")) {
 					file_type = IsoRank;
@@ -203,7 +210,8 @@ int main(int argc, char **argv) {
 	"Beta: %e\n"
 	"Number of iterations: %d\n"
 	"Epsilon: %e\n"
-	,full_path1, full_path2, seq_path, FileType_names[file_type], output_path, InitType_names[init_type], alpha, beta, max_it, epsilon);
+	"Prior output: %s\n"
+	,full_path1, full_path2, seq_path, FileType_names[file_type], output_path, InitType_names[init_type], alpha, beta, max_it, epsilon, prior_output);
 
 
 	char prefix[1024];
@@ -264,15 +272,18 @@ int main(int argc, char **argv) {
 	 *****    Initialing input vectors
 	 *******************************************************************************************************************************/	
 	double *w = NULL;
-	char out_path[1024];
-	sprintf(out_path, "%s/%s_vs_%s.smat", output_path, first, second);	
-	if(file_type == SMAT) {
-		w = readSeqSim_SMAT(seq_path); // w is not normalized, yet. It will be normalized in ProdTensor::TAME
+	if(strcmp(seq_path, "")) {
+		char out_path[1024];
+		sprintf(out_path, "%s/%s_vs_%s.smat", output_path, first, second);
+
+		if(file_type == SMAT) {
+			w = readSeqSim_SMAT(seq_path); // w is not normalized, yet. It will be normalized in ProdTensor::TAME
+		}
+		else {
+			w = readSeqSim(G, H, seq_path, out_path); // w is not normalized, yet. It will be normalized in ProdTensor::TAME
+		}
 	}
-	else {		
-		w = readSeqSim(G, H, seq_path, out_path); // w is not normalized, yet. It will be normalized in ProdTensor::TAME
-	}
-	if( w == NULL && init_type == SeqSim ) {
+	if( w == NULL) {
 		fprintf(stderr, "Main:: Error reading sequence similarity file. Resetting to uniform prior\n");
 		long N = (G->n*H->n);
 		int mem_size = N*sizeof(double);
@@ -280,13 +291,12 @@ int main(int argc, char **argv) {
 		if(w == NULL) {
 			fprintf(stderr, "main:: Error allocating memory for w.\n");
 			exit(255);
-		}		
+		}
 		double uni_val = 1.0 / N;
 		for(register int i = 0; i < N; i++) {
 			w[i] = uni_val;
 		}
 	}
-
 	
 	/*******************************************************************************************************************************	
 	 *****    Removing "orphan" vertices from the input graphs (nodes with no matching vertices (based on w) in the other graph
@@ -308,19 +318,19 @@ int main(int argc, char **argv) {
 		for(i = 0; i < G->n; i++) {
 			if(num_matches_in_H[i] == 0) {
 				G_orphan.push_back(i);
-//				printf("vertex %d is orphan in G!\n", i+1);
+				//printf("vertex %d is orphan in G!\n", i+1);
 			}
 		}
-		printf("Number of orphas in G = %d\n", (int)G_orphan.size());
+		printf("Number of orphans in G = %d\n", (int)G_orphan.size());
 		G->pruneVertices(G_orphan);
 
 		for(i = 0; i < H->n; i++) {
 			if(num_matches_in_G[i] == 0) {
 				H_orphan.push_back(i);
-//				printf("vertex %d is orphan in H!\n", i+1);
+				//printf("vertex %d is orphan in H!\n", i+1);
 			}
 		}
-		printf("Number of orphas in H = %d\n", (int)H_orphan.size());
+		printf("Number of orphans in H = %d\n", (int)H_orphan.size());
 		H->pruneVertices(H_orphan);
 	}
 	/*******************************************************************************************************************************
@@ -353,7 +363,16 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "TAME:: Can't allocate memory for 'x0'\n");
 		return -1;
 	}
-	pt.InitX(x0, init_type, w);
+	if(strcmp(prior_output, "")) {
+		printf("Reading last saved output from %s\n", prior_output);
+		mat X;
+		X.load(prior_output, raw_ascii);
+		vec X_vec = reshape(X.t(), pt.n, 1);
+		memcpy(x0, X_vec.memptr(), pt.n*sizeof(double));
+	}
+	else {
+		pt.InitX(x0, init_type, w);
+	}
 
 	pt.issHOPM(max_it, alpha, beta, epsilon, w, x0, init_type);
 

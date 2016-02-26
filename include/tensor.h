@@ -4,6 +4,10 @@
 #include <triangle.h>
 #include <io.h>
 
+#include "bMatching.h"
+#include "mtxReader.h"
+#include "pcl_stack.h"
+
 enum graph_idx {first_graph, second_graph};
 
 #define MAXRAND 1000
@@ -26,11 +30,15 @@ struct stats {
 };
 
 struct alignment {
-	int *mi;
-	int *mj;
-	vector<int> *PrefG;
-	vector<int> *PrefH;
+	int *left_match; // left_match[e] is the vertex in G for the e^th match in the alignment
+	int *right_match; // right_match[e] is the vertex in G for the e^th match in the alignment
+	vector<int> *PrefG; // For every vertex i' in H, PrefG[i'] is the set of potential matches for i' in G
+	vector<int> *PrefH; // For every vertex i in G, PrefH[i] is the set of potential matches for i in H
 
+	int *left_project; //  For every vertex i' in H, it holds the projection of i' into G. In otherwords, it is either a vertex id i in G, if i' is matched, or -1 if it is not matched
+	int *right_project; //  For every vertex i in G, it holds the projection of i into H. In otherwords, it is either a vertex id i' in H, if i is matched, or -1 if it is not matched
+
+	unsigned long int  match_no;
 	unsigned long int conserved_edges;
 	unsigned long int conserved_triangles;
 	double total_seqSim;
@@ -45,7 +53,7 @@ public:
 	ProdTensor(Graph *G, TriangleCounts* T_G, Graph *H, TriangleCounts* T_H, double *w, Sparsity_Type sparsity_flag, char *output_path, char *prefix);
 	void impTTV(double *new_x, double *x);
 	eigen* issHOPM(int max_it, double alpha, double beta, double epsilon, double *w, double *x0, int init_type);
-	alignment* postprocess(double *x_final);
+	alignment* postprocess(double *x_final, int max_iter, int fixed_b);
 	
 	stats evalX(double *x);
 	int InitX(double *x, int init_type, double *w = NULL);
@@ -65,9 +73,16 @@ private:
 
 	int initMatchingDatasets();
 	unsigned int setupBipartiteGraph(double *x_in);
-	long countTrianglesUnderAlignment(vector<int> mi, vector<int> mj);
 	double norm(double *v, unsigned long n);
 	double normalize(double *v_norm, double *v, unsigned long n);
+
+
+	long countTrianglesUnderAlignment(vector<int> mi, vector<int> mj);
+	long DeltaT_removeMatch(vector<int> mi, vector<int> mj, unsigned int i);
+	long DeltaT_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<unsigned int> e);
+
+
+
 
 	TriangleCounts *T_G, *T_H;
 	Graph *G, *H; 
