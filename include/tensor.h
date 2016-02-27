@@ -87,6 +87,7 @@ private:
 
 
 	long countTrianglesUnderAlignment(vector<int> mi, vector<int> mj);
+	long countTEdgesUnderAlignment(vector<int> mi, vector<int> mj);
 	long DeltaT_removeMatch(vector<int> mi, vector<int> mj, unsigned int i);
 	long DeltaT_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<int> e);
 	double 	evaluateMove(Move &new_move, alignment *align);

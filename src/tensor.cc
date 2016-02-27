@@ -556,7 +556,6 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 		temp_x[align->left_match[i]*this->n2+align->right_match[i]] = 0;
 	}
 
-
 	printf("\tConstructing initial graph for bMatching\n"); fflush(stdout);
     CSR G;
     G.DenseVec2CSR(temp_x, this->n1, this->n2);
@@ -714,11 +713,13 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 		best_move.e[i].resize(2); // reserve size for end points of matching edges
 	}
 
+	double total_improvement = 0;
 	vector<int> right_unmatched, left_unmatched, matched_candidates;
 	for(it = 0; it < (unsigned int)max_iter; it++) {
 		printf("Iteration %d \n", it);
-		best_move.score = 0; best_move.move_no = 0;
+		total_improvement = 0;
 		for(k = 0; k < align->match_no; k++) {
+			best_move.score = 0; best_move.move_no = 0;
 			i = align->left_match[k]; i_prime = align->right_match[k];
 
 			left_unmatched.clear(); // Nodes on the left side (G) that are in Pref set of i' and are either matched/unmatched
@@ -806,17 +807,24 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 					copyMove(best_move, new_move);
 				}
 			}
-		}
+			if(0 < best_move.score) {
+				applyMove(best_move, align);
+				total_improvement += best_move.score;
+			}
 
-		if(0 < best_move.score) {
-			printf("\tIncreasing score by %lf\n", best_move.score);
-			applyMove(best_move, align);
+		}
+		if(0 < total_improvement) {
+			printf("Total improvement = %lf\n", total_improvement);
 		}
 		else {
-			printf("\tNo improvement\n");
+			printf("No more improvement during a whole iteration. Exiting now.");
 			break;
 		}
+
 	}
+	align->conserved_edges = countTEdgesUnderAlignment(align->left_match, align->right_match);
+	align->conserved_triangles = countTrianglesUnderAlignment(align->left_match, align->right_match);
+
 	return align;
 }
 
@@ -848,6 +856,7 @@ double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 			new_mi[new_move.m_id[k]] = new_move.e[k][0];
 			new_mj[new_move.m_id[k]] = new_move.e[k][1];
 		}
+/*		printf("\tStep 1 = %lf\n", new_move.score);*/
 
 		// 1) triangles that we removed twice: add them back in!
 		if(G->getEdge(align->left_match[i], align->left_match[j]) && H->getEdge(align->right_match[i], align->right_match[j]) ) { // Removed (alignment) nodes were connected, so they could have been part of shared triangles
@@ -861,11 +870,13 @@ double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 				}
 			}
 		}
+/*		printf("\tStep 2 = %lf\n", new_move.score);*/
 
 		// Compute the gain from added edges
 		for(k = 0; k < new_move.move_no; k++) {
 			new_move.score += DeltaT_addMatch(new_mi, new_mj, new_move.m_id[k], new_move.e[k]);
 		}
+/*		printf("\tStep 3 = %lf\n", new_move.score);*/
 
 
 		// 2) triangles that we added twice: remove them!
@@ -880,6 +891,9 @@ double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 				}
 			}
 		}
+/*		printf("\tStep 4 = %lf\n", new_move.score);*/
+
+
 	}
 
 	//printf("Score = %lf\n", new_move.score);
@@ -889,6 +903,7 @@ double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 void ProdTensor::copyMove(Move &dst, Move& src) {
 	register unsigned int i;
 
+	dst.score = src.score;
 	dst.move_no = src.move_no;
 	for(i = 0; i < src.move_no; i++) {
 		dst.m_id[i] = src.m_id[i];
@@ -1064,7 +1079,7 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	printf("\t\t\tdt full export = %f\n", timer.toc());
 */
 
-	alignment* result = postprocess(best_x.memptr(), 1, 10);
+	alignment* result = postprocess(best_x.memptr(), 100, 20);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
 
@@ -1173,6 +1188,21 @@ long ProdTensor::countTrianglesUnderAlignment(vector<int> mi, vector<int> mj) {
 	}	
 	
 	return tri_count;
+}
+
+long ProdTensor::countTEdgesUnderAlignment(vector<int> mi, vector<int> mj) {
+	register unsigned int i, j;
+
+	 long edge_count = 0;
+
+     for(i = 0; i < mi.size(); i++) {
+		for(j = i+1; j < mi.size(); j++) {
+			if(G->getEdge(mi[i], mi[j]) && H->getEdge(mj[i], mj[j]) )
+				edge_count++;
+		}
+	}
+
+	return edge_count;
 }
 
 int ProdTensor::InitX(double *x, int init_type, double *w) {
