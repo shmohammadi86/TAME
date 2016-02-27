@@ -699,17 +699,30 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	// Prune Pref sets to only have homogenously high SeqSim entries (remove ones that are significantly lower that the others)
 
 	Move new_move, best_move;
-	new_move.e.resize(2); // We only consider moves of size up to 2 (size 4 paths)
-	new_move.m_id.resize(2);
+
+	unsigned int max_length = 2;
+
+	new_move.m_id.resize(max_length);
+	new_move.e.resize(max_length); // We only consider moves of size up to 2 (size 4 paths)
+	for(i = 0; i < max_length; i++) {
+		new_move.e[i].resize(2); // reserve size for end points of matching edges
+	}
+
+	best_move.m_id.resize(max_length);
+	best_move.e.resize(max_length); // We only consider moves of size up to 2 (size 4 paths)
+	for(i = 0; i < max_length; i++) {
+		best_move.e[i].resize(2); // reserve size for end points of matching edges
+	}
 
 	vector<int> right_unmatched, left_unmatched, matched_candidates;
 	for(it = 0; it < (unsigned int)max_iter; it++) {
-		best_move.score = -1; best_move.move_no = 0;
+		printf("Iteration %d \n", it);
+		best_move.score = 0; best_move.move_no = 0;
 		for(k = 0; k < align->match_no; k++) {
 			i = align->left_match[k]; i_prime = align->right_match[k];
 
 			left_unmatched.clear(); // Nodes on the left side (G) that are in Pref set of i' and are either matched/unmatched
-			for(l = 0; l < align->PrefG[i_prime].size(); l++) {
+ 			for(l = 0; l < align->PrefG[i_prime].size(); l++) {
 				j = align->PrefG[i_prime][l];
 				if(align->right_project[j] == -1) {
 					left_unmatched.push_back(j);
@@ -732,6 +745,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 				j = left_unmatched[l];
 				new_move.e[0][0] = j;
 
+				//printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
 				evaluateMove(new_move, align);
 				if(best_move.score < new_move.score ) {
 					copyMove(best_move, new_move);
@@ -743,6 +757,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 				j_prime = right_unmatched[l];
 				new_move.e[0][1] = j_prime;
 
+				//printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
 				evaluateMove(new_move, align);
 				if(best_move.score < new_move.score ) {
 					copyMove(best_move, new_move);
@@ -755,8 +770,9 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 			for(l = 0; l < align->match_no; l++) {
 				if(l == k)
 					continue;
-				j = align->right_match[l];
-				j_prime = align->left_match[l];
+				j = align->left_match[l];
+				j_prime = align->right_match[l];
+				new_move.m_id[1] = l;
 
 				new_move.e[0][0] = i;
 				new_move.e[0][1] = j_prime;
@@ -784,6 +800,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 
 				// Prune based on edges
 
+				//printf("Swap %d <-> %d and %d <-> %d with %d <-> %d and %d <-> %d\n", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
 				evaluateMove(new_move, align);
 				if(best_move.score < new_move.score ) {
 					copyMove(best_move, new_move);
@@ -791,7 +808,14 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 			}
 		}
 
-		applyMove(best_move, align);
+		if(0 < best_move.score) {
+			printf("\tIncreasing score by %lf\n", best_move.score);
+			applyMove(best_move, align);
+		}
+		else {
+			printf("\tNo improvement\n");
+			break;
+		}
 	}
 	return align;
 }
@@ -799,20 +823,38 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 	new_move.score = 0;
 
-	// Evaluate first swap first
-	new_move.score = DeltaT_addMatch(align->left_match, align->right_match, new_move.m_id[0], new_move.e[0])
+	/*int i = align->left_match[new_move.m_id[0]];
+	int j = align->left_match[new_move.m_id[1]];
+	int i_prime = align->right_match[new_move.m_id[0]];
+	int j_prime = align->right_match[new_move.m_id[1]];
+	if(new_move.move_no == 1) {
+		printf("\tEvaluating %d <-> %d versus %d <-> %d ... ", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
+	}
+	else if(new_move.move_no == 2) {
+		printf("\tEvaluating %d <-> %d and %d <-> %d versus %d <-> %d and %d <-> %d ... ", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
+	}
+*/
+	if(new_move.move_no == 1) {
+		new_move.score = DeltaT_addMatch(align->left_match, align->right_match, new_move.m_id[0], new_move.e[0])
 					- DeltaT_removeMatch(align->left_match, align->right_match, new_move.m_id[0]);
-
-	// Evaluate second swap, if needed
-	if(new_move.move_no == 2) {
-		new_move.score += (DeltaT_addMatch(align->left_match, align->right_match, new_move.m_id[1], new_move.e[1])
-						- DeltaT_removeMatch(align->left_match, align->right_match, new_move.m_id[1]));
-
-		// Now remove double counted triangle in between the two vertices in the alignment graph
-		// 1) triangles that we removed twice: add them back in!
+	}
+	else  {
 		unsigned register int i = new_move.m_id[0], j = new_move.m_id[1], k;
+		// Aggregated removal cost and update alignment with the new move
+		vector<int> new_mi = align->left_match;
+		vector<int> new_mj = align->right_match;
+		for(k = 0; k < new_move.move_no; k++) {
+			new_move.score -= DeltaT_removeMatch(align->left_match, align->right_match, new_move.m_id[k]);
+			new_mi[new_move.m_id[k]] = new_move.e[k][0];
+			new_mj[new_move.m_id[k]] = new_move.e[k][1];
+		}
+
+		// 1) triangles that we removed twice: add them back in!
 		if(G->getEdge(align->left_match[i], align->left_match[j]) && H->getEdge(align->right_match[i], align->right_match[j]) ) { // Removed (alignment) nodes were connected, so they could have been part of shared triangles
-			for(k = j+1; k < align->match_no; k++) {
+			for(k = 0; k < align->match_no; k++) {
+				if(k == i || k == j)
+					continue;
+
 				if( (G->getEdge(align->left_match[i], align->left_match[k]) && H->getEdge(align->right_match[i], align->right_match[k])) &&
 					(G->getEdge(align->left_match[j], align->left_match[k]) && H->getEdge(align->right_match[j], align->right_match[k])) ) {
 					new_move.score ++;
@@ -820,18 +862,27 @@ double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 			}
 		}
 
+		// Compute the gain from added edges
+		for(k = 0; k < new_move.move_no; k++) {
+			new_move.score += DeltaT_addMatch(new_mi, new_mj, new_move.m_id[k], new_move.e[k]);
+		}
+
+
 		// 2) triangles that we added twice: remove them!
-		if(G->getEdge(new_move.e[0][0], new_move.e[1][0]) && H->getEdge(new_move.e[0][1], new_move.e[1][1]) ) { // Added nodes are connected, so they can be part of shared triangles
-			for(k = j+1; k < align->match_no; k++) {
-				if( (G->getEdge(new_move.e[0][0], align->left_match[k]) && H->getEdge(new_move.e[0][1], align->right_match[k])) &&
-					(G->getEdge(new_move.e[1][0], align->left_match[k]) && H->getEdge(new_move.e[1][1], align->right_match[k])) ) {
+		if(G->getEdge(new_mi[new_move.m_id[0]], new_mi[new_move.m_id[1]]) && H->getEdge(new_mj[new_move.m_id[0]], new_mj[new_move.m_id[1]])) { // Added (matching) nodes are connected (in the alignment graph), so they can be part of shared triangles
+			for(k = 0; k < align->match_no; k++) {
+				if((int)k == new_move.m_id[0] || (int)k == new_move.m_id[1])
+					continue;
+
+				if( (G->getEdge(new_mi[new_move.m_id[0]], align->left_match[k]) && H->getEdge(new_mj[new_move.m_id[0]], align->right_match[k])) &&
+					(G->getEdge(new_mi[new_move.m_id[1]], align->left_match[k]) && H->getEdge(new_mj[new_move.m_id[1]], align->right_match[k])) ) {
 					new_move.score --;
 				}
 			}
 		}
 	}
 
-
+	//printf("Score = %lf\n", new_move.score);
 	return new_move.score;
 }
 
