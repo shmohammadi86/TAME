@@ -505,18 +505,18 @@ void ProdTensor::Shift(int shift_type) {
 	}
 }
 
-alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
+alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree) {
 /*
 	this->n1 = this->G->n;
 	this->n2 = this->H->n;
 	this->n = n1*n2;  number of edges in L
 */
 	printf("Post-processing ... \n");
-	int bMatching_alg = 2;
-    bool verbose = true;
-	int fixed_b = max(0, k - 1);
+	int bMatching_alg = 13;
+    bool verbose = false;
+	int fixed_b = max(0, max_degree - 1); // Hungarian edge + (b-1)
 
-	register unsigned int i, j;
+	register unsigned int i, i_prime, j, j_prime, k, l, s, t, it;
 	double *temp_x = new double[this->n];
 	memcpy(temp_x, x_final, this->n*sizeof(double));
 
@@ -528,8 +528,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 	align->match_no = myStats.num_matches;
 	printf("\tInitial edges = %ld, triangles = %ld\n", align->conserved_edges, align->conserved_triangles);
 
-	align->left_match = new int[align->match_no];
-	align->right_match = new int[align->match_no];
+	align->left_match.resize(align->match_no);
+	align->right_match.resize(align->match_no);
 
 	align->PrefH = new vector<int>[this->n1];
 	align->right_project = new int[this->n1];
@@ -553,7 +553,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 		align->left_project[align->right_match[i]] = align->left_match[i];
 		align->right_project[align->left_match[i]] = align->right_match[i];
 
-		//temp_x[align->left_match[i]*this->n2+align->right_match[i]] = 0;
+		temp_x[align->left_match[i]*this->n2+align->right_match[i]] = 0;
 	}
 
 
@@ -569,7 +569,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 
 		if(card>fixed_b)
 			b[i]=fixed_b;
-		else b[i]=card;
+		else b[i]=max(1, card);
     }
 
 
@@ -595,20 +595,20 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
     if(bMatching_alg==0 || bMatching_alg== 5)
         S1=(Node*)malloc(G.nVer*sizeof(Node));      //Heap data structure
     Node* S=(Node*)malloc(G.nVer*sizeof(Node));      //Heap data structure
-
-	#pragma omp parallel for
+    printf("Size = %d, sum = %d\n", G.nVer, this->n1+this->n2);
 	for(i = 0; i < (unsigned int)G.nVer; i++)
 	{
-		S[i].heap=(Info*)malloc(b[i]*sizeof(Info));      //Each heap of size b
+		S[i].heap=(Info*)malloc(max(1, b[i])*sizeof(Info));      //Each heap of size b
+		S[i].curSize = 0;
 		if(bMatching_alg==5 || bMatching_alg ==0)
-			S1[i].heap=(Info*)malloc(b[i]*sizeof(Info));      //Each heap of size b
+			S1[i].heap=(Info*)malloc(max(1, b[i])*sizeof(Info));      //Each heap of size b
 	}
 
     stack_pcl<Param>* St=NULL;
     int* order=NULL;
     float M[2];
     int best;
-	int stepM = 1; // step size for partial sorting
+	int stepM = 3; // step size for partial sorting
 
     /*******************************
      *    Other datastructures
@@ -665,38 +665,126 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 
 
    printf("\tAdding bMatches to H preferred set\n"); fflush(stdout);
-	for (i = 0; i < align->match_no; i++) {
-        for(j = 0; j < (unsigned int) S[align->left_match[i]].curSize; j++) {
-    		align->PrefH[i].push_back((S[align->left_match[i]].heap[j].id) - this->n1);
+	for (i = 0; i < this->n1; i++) {
+        for(j = 0; j < (unsigned int) S[i].curSize; j++) {
+    		align->PrefH[i].push_back((S[i].heap[j].id) - this->n1);
         }
 	}
 
 
     printf("\tAdding bMatches to G preferred set\n"); fflush(stdout);
-	for (i = 0; i < align->match_no; i++) {
-        for(j = 0; j < (unsigned int) S[align->right_match[i]+this->n1].curSize; j++) {
-    		align->PrefG[i].push_back(S[align->right_match[i]+this->n1].heap[j].id);
+	for (i = 0; i < this->n2; i++) {
+        for(j = 0; j < (unsigned int) S[i+this->n1].curSize; j++) {
+    		align->PrefG[i].push_back(S[i+this->n1].heap[j].id);
         }
 	}
 
 
 	/*for(i = 0; i < align->match_no; i++) {
 		printf("Mi[%d] =  %d (%s) in G\n", i, align->left_match[i], this->G->getVertexName(align->left_match[i]));
-		for(j = 0; j < align->PrefH[i].size(); j++) {
-			printf("\tVertex %d (%s) in H\n", align->PrefH[i][j], this->H->getVertexName(align->PrefH[i][j]));
+		for(j = 0; j < align->PrefH[align->left_match[i]].size(); j++) {
+			printf("\tVertex %d (%s) in H\n", align->PrefH[align->left_match[i]][j], this->H->getVertexName(align->PrefH[align->left_match[i]][j]));
 		}
 	}
 
 
 	for(i = 0; i < align->match_no; i++) {
 		printf("Mj[%d] =  %d (%s) in H\n", i, align->right_match[i], this->H->getVertexName(align->right_match[i]));
-		for(j = 0; j < align->PrefG[i].size(); j++) {
-			printf("\tVertex %d (%s) in G\n", align->PrefG[i][j], this->G->getVertexName(align->PrefG[i][j]));
+		for(j = 0; j < align->PrefG[align->right_match[i]].size(); j++) {
+			printf("\tVertex %d (%s) in G\n", align->PrefG[align->right_match[i]][j], this->G->getVertexName(align->PrefG[align->right_match[i]][j]));
 		}
 	}*/
 
 
+	// Prune Pref sets to only have homogenously high SeqSim entries (remove ones that are significantly lower that the others)
+
+	Move new_move, best_move;
+	new_move.e.resize(2); // We only consider moves of size up to 2 (size 4 paths)
+	new_move.m_id.resize(2);
+
+	vector<int> right_unmatched, left_unmatched, matched_candidates;
+	for(it = 0; it < (unsigned int)max_iter; it++) {
+		for(k = 0; k < align->match_no; k++) {
+			i = align->left_match[k]; i_prime = align->right_match[k];
+
+			left_unmatched.clear(); // Nodes on the left side (G) that are in Pref set of i' and are either matched/unmatched
+			for(l = 0; l < align->PrefG[i_prime].size(); l++) {
+				j = align->PrefG[i_prime][l];
+				if(align->right_project[j] == -1) {
+					left_unmatched.push_back(j);
+				}
+			}
+
+			right_unmatched.clear();
+			for(l = 0; l < align->PrefH[i].size(); l++) {
+				j_prime = align->PrefH[i][l];
+				if(align->left_project[j_prime] == -1) {
+					right_unmatched.push_back(j_prime);
+				}
+			}
+
+			new_move.move_no = 1;
+			new_move.m_id[0] = k;
+
+			new_move.e[0][1] = i_prime;
+			for(l = 0; l < left_unmatched.size(); l++) {
+				j = left_unmatched[l];
+				new_move.e[0][0] = j;
+			}
+
+			new_move.e[0][0] = i;
+			for(l = 0; l < right_unmatched.size(); l++) {
+				j_prime = right_unmatched[l];
+				new_move.e[0][1] = j_prime;
+			}
+
+			// Now look at already matched edges and evaluate them as swap candidates
+			matched_candidates.clear();
+			new_move.move_no = 2;
+			for(l = 0; l < align->match_no; l++) {
+				if(l == k)
+					continue;
+				j = align->right_match[l];
+				j_prime = align->left_match[l];
+
+				new_move.e[0][0] = i;
+				new_move.e[0][1] = j_prime;
+				new_move.e[1][0] = j;
+				new_move.e[1][1] = i_prime;
+
+				// Prune based on preferred sets
+				// 1) Make sure j' \in PrefH(i)
+				for(s = 0; s < align->PrefH[i].size(); s++) {
+					if(align->PrefH[i][s] == (int)j_prime)
+						break;
+				}
+				if(s == align->PrefH[i].size())
+					continue;
+
+				// 1) Make sure j \in PrefG(i')
+				for(s = 0; s < align->PrefG[i_prime].size(); s++) {
+					if(align->PrefG[i_prime][s] == (int)j)
+						break;
+				}
+				if(s == align->PrefG[i].size())
+					continue;
+
+				// prune based on seqsim, if needed
+
+				// Prune based on edges
+
+				evaluateMove(new_move);
+			}
+		}
+
+	}
 	return align;
+}
+
+double 	ProdTensor::evaluateMove(Move &new_move) {
+	double score = 0;
+
+	return score;
 }
 
 eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, double epsilon, double *w, double *x0, int init_type) {
@@ -704,10 +792,10 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	register unsigned int i, j;
 	char x_path[1024];
 	
+	this->best_x = vec(x0, this->n);
 	this->x_vec = vec(x0, this->n); //.set_size(this->n, 1);
 	this->x_hat_vec.set_size(this->n, 1);
-	this->w_vec.set_size(this->n, 1);
-	this->best_x = this->x_vec;
+	this->w_vec = vec(w, this->n);
 	
 	this->X.set_size(this->n1, this->n2);
 
@@ -717,15 +805,6 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 
 	// Misuse of notation in the paper. Let's change the order to avoid confusion
 	this->alpha = shift_param;
-	this->beta = weight_param;
-	
-	if(this->beta != 0) {
-		this->sigma = (1-this->beta)/this->beta;
-	}
-	else {
-		printf("beta = 0, there is nothing to be done!\n");
-		return NULL;
-	}
 
 	printf("ISS-HOPM::Max Iter = %d, Alpha (shift) = %e, Beta (weight) = %e, Epsilon = %e\n", max_it, this->alpha, this->beta, epsilon); 	fflush(stdout);
 
@@ -733,11 +812,6 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	stats myStats, bestStats; bestStats.T = bestStats.M = -1;
 	wall_clock timer;
 
-	int noutedges;
-	setupBipartiteGraph(w);
-	double matching_score = match(n1, n2, unmatched_rows.size()*unmatched_cols.size(), rows, cols, edge_weights, mi, mj, &noutedges);	
-	this->w_vec = vec(w, this->n) / matching_score; // % vec(w, this->n);
-	printf("\tNorm-1 of w matching = %e\n", matching_score);	
 	
 	double old_lambda = -datum::inf, delta_lambda;
 
@@ -760,7 +834,6 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 		// Then shift x_hat_vec(i) ...
 		timer.tic();
 		printf("\t\t\tShifting now:\n");
-		printf("\t\t\t\tNorm of x_hat(k) = %.2f\t Norm of x(k-1) = %.2f\n", arma::norm(x_hat_vec), arma::norm(x_vec));
 		//Shift(x_hat_vec.memptr(), x_vec.memptr(), w, alpha, beta, shift_type);
 		//Shift(shift_type);
 		x_hat_vec += this->alpha*x_vec;			
@@ -871,9 +944,12 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	X.save(x_path, raw_ascii);
 	printf("\t\t\tdt full export = %f\n", timer.toc());
 */
+
+	alignment* result = postprocess(best_x.memptr(), 1, 10);
+	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
 
-	// Export binarized matrix X
+/*	// Export binarized matrix X
 	myStats = evalX(best_x.memptr()); // also sets mi, mj because it runs matching
 	printf("\t\t\tFINAL matchin_score = %e, matched edges = %ld, matched tries = %ld, dt = %f\n", myStats.matching_score, myStats.M, myStats.T, timer.toc());
 	fflush(stdout);
@@ -886,12 +962,10 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 		fprintf(fd, "%d\t%d\t1\n", (int)mi[j], (int)mj[j]);
 	}
 	fclose(fd);
+*/
 
 
-	alignment* result = postprocess(best_x.memptr(), 100, 4);
-	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
-
-	vector<int> MI, MJ;
+/*	vector<int> MI, MJ;
 	for(i = 0; i < myStats.num_matches; i++) {
 		MI.push_back(mi[i]);
 		MJ.push_back(mj[i]);
@@ -905,7 +979,7 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 		Tsum += curr_sum;
 	}
 	printf("Total sum = %ld\n", Tsum);
-
+*/
 
 	res->flag = 0;
 	return res;

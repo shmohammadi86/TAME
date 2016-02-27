@@ -505,7 +505,7 @@ void ProdTensor::Shift(int shift_type) {
 	}
 }
 
-alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
+alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree) {
 /*
 	this->n1 = this->G->n;
 	this->n2 = this->H->n;
@@ -514,9 +514,9 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 	printf("Post-processing ... \n");
 	int bMatching_alg = 13;
     bool verbose = false;
-	int fixed_b = max(0, k - 1);
+	int fixed_b = max(0, max_degree - 1); // Hungarian edge + (b-1)
 
-	register unsigned int i, j;
+	register unsigned int i, i_prime, j, j_prime, k, l, s, it;
 	double *temp_x = new double[this->n];
 	memcpy(temp_x, x_final, this->n*sizeof(double));
 
@@ -528,8 +528,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 	align->match_no = myStats.num_matches;
 	printf("\tInitial edges = %ld, triangles = %ld\n", align->conserved_edges, align->conserved_triangles);
 
-	align->left_match = new int[align->match_no];
-	align->right_match = new int[align->match_no];
+	align->left_match.resize(align->match_no);
+	align->right_match.resize(align->match_no);
 
 	align->PrefH = new vector<int>[this->n1];
 	align->right_project = new int[this->n1];
@@ -698,11 +698,161 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int k) {
 
 	// Prune Pref sets to only have homogenously high SeqSim entries (remove ones that are significantly lower that the others)
 
-	for(int it = 0; it < max_iter; it++) {
+	Move new_move, best_move;
+	new_move.e.resize(2); // We only consider moves of size up to 2 (size 4 paths)
+	new_move.m_id.resize(2);
 
+	vector<int> right_unmatched, left_unmatched, matched_candidates;
+	for(it = 0; it < (unsigned int)max_iter; it++) {
+		best_move.score = -1; best_move.move_no = 0;
+		for(k = 0; k < align->match_no; k++) {
+			i = align->left_match[k]; i_prime = align->right_match[k];
 
+			left_unmatched.clear(); // Nodes on the left side (G) that are in Pref set of i' and are either matched/unmatched
+			for(l = 0; l < align->PrefG[i_prime].size(); l++) {
+				j = align->PrefG[i_prime][l];
+				if(align->right_project[j] == -1) {
+					left_unmatched.push_back(j);
+				}
+			}
+
+			right_unmatched.clear();
+			for(l = 0; l < align->PrefH[i].size(); l++) {
+				j_prime = align->PrefH[i][l];
+				if(align->left_project[j_prime] == -1) {
+					right_unmatched.push_back(j_prime);
+				}
+			}
+
+			new_move.move_no = 1;
+			new_move.m_id[0] = k;
+
+			new_move.e[0][1] = i_prime;
+			for(l = 0; l < left_unmatched.size(); l++) {
+				j = left_unmatched[l];
+				new_move.e[0][0] = j;
+
+				evaluateMove(new_move, align);
+				if(best_move.score < new_move.score ) {
+					copyMove(best_move, new_move);
+				}
+			}
+
+			new_move.e[0][0] = i;
+			for(l = 0; l < right_unmatched.size(); l++) {
+				j_prime = right_unmatched[l];
+				new_move.e[0][1] = j_prime;
+
+				evaluateMove(new_move, align);
+				if(best_move.score < new_move.score ) {
+					copyMove(best_move, new_move);
+				}
+			}
+
+			// Now look at already matched edges and evaluate them as swap candidates
+			matched_candidates.clear();
+			new_move.move_no = 2;
+			for(l = 0; l < align->match_no; l++) {
+				if(l == k)
+					continue;
+				j = align->right_match[l];
+				j_prime = align->left_match[l];
+
+				new_move.e[0][0] = i;
+				new_move.e[0][1] = j_prime;
+				new_move.e[1][0] = j;
+				new_move.e[1][1] = i_prime;
+
+				// Prune based on preferred sets
+				// 1) Make sure j' \in PrefH(i)
+				for(s = 0; s < align->PrefH[i].size(); s++) {
+					if(align->PrefH[i][s] == (int)j_prime)
+						break;
+				}
+				if(s == align->PrefH[i].size())
+					continue;
+
+				// 1) Make sure j \in PrefG(i')
+				for(s = 0; s < align->PrefG[i_prime].size(); s++) {
+					if(align->PrefG[i_prime][s] == (int)j)
+						break;
+				}
+				if(s == align->PrefG[i].size())
+					continue;
+
+				// prune based on seqsim, if needed
+
+				// Prune based on edges
+
+				evaluateMove(new_move, align);
+				if(best_move.score < new_move.score ) {
+					copyMove(best_move, new_move);
+				}
+			}
+		}
+
+		applyMove(best_move, align);
 	}
 	return align;
+}
+
+double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
+	new_move.score = 0;
+
+	// Evaluate first swap first
+	new_move.score = DeltaT_addMatch(align->left_match, align->right_match, new_move.m_id[0], new_move.e[0])
+					- DeltaT_removeMatch(align->left_match, align->right_match, new_move.m_id[0]);
+
+	// Evaluate second swap, if needed
+	if(new_move.move_no == 2) {
+		new_move.score += (DeltaT_addMatch(align->left_match, align->right_match, new_move.m_id[1], new_move.e[1])
+						- DeltaT_removeMatch(align->left_match, align->right_match, new_move.m_id[1]));
+
+		// Now remove double counted triangle in between the two vertices in the alignment graph
+		// 1) triangles that we removed twice: add them back in!
+		unsigned register int i = new_move.m_id[0], j = new_move.m_id[1], k;
+		if(G->getEdge(align->left_match[i], align->left_match[j]) && H->getEdge(align->right_match[i], align->right_match[j]) ) { // Removed (alignment) nodes were connected, so they could have been part of shared triangles
+			for(k = j+1; k < align->match_no; k++) {
+				if( (G->getEdge(align->left_match[i], align->left_match[k]) && H->getEdge(align->right_match[i], align->right_match[k])) &&
+					(G->getEdge(align->left_match[j], align->left_match[k]) && H->getEdge(align->right_match[j], align->right_match[k])) ) {
+					new_move.score ++;
+				}
+			}
+		}
+
+		// 2) triangles that we added twice: remove them!
+		if(G->getEdge(new_move.e[0][0], new_move.e[1][0]) && H->getEdge(new_move.e[0][1], new_move.e[1][1]) ) { // Added nodes are connected, so they can be part of shared triangles
+			for(k = j+1; k < align->match_no; k++) {
+				if( (G->getEdge(new_move.e[0][0], align->left_match[k]) && H->getEdge(new_move.e[0][1], align->right_match[k])) &&
+					(G->getEdge(new_move.e[1][0], align->left_match[k]) && H->getEdge(new_move.e[1][1], align->right_match[k])) ) {
+					new_move.score --;
+				}
+			}
+		}
+	}
+
+
+	return new_move.score;
+}
+
+void ProdTensor::copyMove(Move &dst, Move& src) {
+	register unsigned int i;
+
+	dst.move_no = src.move_no;
+	for(i = 0; i < src.move_no; i++) {
+		dst.m_id[i] = src.m_id[i];
+		dst.e[i][0] = src.e[i][0];
+		dst.e[i][1] = src.e[i][1];
+	}
+}
+
+void ProdTensor::applyMove(Move &best_move, alignment* align) {
+	register unsigned int i;
+
+	for(i = 0; i < best_move.move_no; i++) {
+		align->left_match[best_move.m_id[i]] = best_move.e[i][0];
+		align->right_match[best_move.m_id[i]] = best_move.e[i][1];
+	}
 }
 
 eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, double epsilon, double *w, double *x0, int init_type) {
@@ -713,7 +863,7 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	this->best_x = vec(x0, this->n);
 	this->x_vec = vec(x0, this->n); //.set_size(this->n, 1);
 	this->x_hat_vec.set_size(this->n, 1);
-	this->w_vec.set_size(this->n, 1);
+	this->w_vec = vec(w, this->n);
 	
 	this->X.set_size(this->n1, this->n2);
 
@@ -723,15 +873,6 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 
 	// Misuse of notation in the paper. Let's change the order to avoid confusion
 	this->alpha = shift_param;
-	this->beta = weight_param;
-	
-	if(this->beta != 0) {
-		this->sigma = (1-this->beta)/this->beta;
-	}
-	else {
-		printf("beta = 0, there is nothing to be done!\n");
-		return NULL;
-	}
 
 	printf("ISS-HOPM::Max Iter = %d, Alpha (shift) = %e, Beta (weight) = %e, Epsilon = %e\n", max_it, this->alpha, this->beta, epsilon); 	fflush(stdout);
 
@@ -739,11 +880,6 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	stats myStats, bestStats; bestStats.T = bestStats.M = -1;
 	wall_clock timer;
 
-	int noutedges;
-	setupBipartiteGraph(w);
-	double matching_score = match(n1, n2, unmatched_rows.size()*unmatched_cols.size(), rows, cols, edge_weights, mi, mj, &noutedges);	
-	this->w_vec = vec(w, this->n) / matching_score; // % vec(w, this->n);
-	printf("\tNorm-1 of w matching = %e\n", matching_score);	
 	
 	double old_lambda = -datum::inf, delta_lambda;
 
@@ -766,7 +902,6 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 		// Then shift x_hat_vec(i) ...
 		timer.tic();
 		printf("\t\t\tShifting now:\n");
-		printf("\t\t\t\tNorm of x_hat(k) = %.2f\t Norm of x(k-1) = %.2f\n", arma::norm(x_hat_vec), arma::norm(x_vec));
 		//Shift(x_hat_vec.memptr(), x_vec.memptr(), w, alpha, beta, shift_type);
 		//Shift(shift_type);
 		x_hat_vec += this->alpha*x_vec;			
@@ -877,9 +1012,12 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	X.save(x_path, raw_ascii);
 	printf("\t\t\tdt full export = %f\n", timer.toc());
 */
+
+	alignment* result = postprocess(best_x.memptr(), 1, 10);
+	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
 
-	// Export binarized matrix X
+/*	// Export binarized matrix X
 	myStats = evalX(best_x.memptr()); // also sets mi, mj because it runs matching
 	printf("\t\t\tFINAL matchin_score = %e, matched edges = %ld, matched tries = %ld, dt = %f\n", myStats.matching_score, myStats.M, myStats.T, timer.toc());
 	fflush(stdout);
@@ -892,10 +1030,8 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 		fprintf(fd, "%d\t%d\t1\n", (int)mi[j], (int)mj[j]);
 	}
 	fclose(fd);
+*/
 
-
-	alignment* result = postprocess(best_x.memptr(), 1, 10);
-	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 
 /*	vector<int> MI, MJ;
 	for(i = 0; i < myStats.num_matches; i++) {
@@ -942,7 +1078,7 @@ long ProdTensor::DeltaT_removeMatch(vector<int> mi, vector<int> mj, unsigned int
 }
 
 
-long ProdTensor::DeltaT_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<unsigned int> e) {
+long ProdTensor::DeltaT_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<int> e) {
 	register unsigned int j, k;
 
 	long tri_count = 0;
