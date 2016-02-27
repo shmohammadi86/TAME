@@ -6,6 +6,9 @@ extern char *InitType_names[];
 bool *G_isMatched, *H_isMatched;
 double *rows, *cols, *edge_weights, *mi, *mj; // matching aux. vectors
 
+bool SeqSim_cmp (switchCandidate x, switchCandidate y) { return (y.seq_sim < x.seq_sim ); }
+
+
 
 
 /**
@@ -531,24 +534,36 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	align->left_match.resize(align->match_no);
 	align->right_match.resize(align->match_no);
 
-	align->PrefH = new vector<int>[this->n1];
+	align->PrefH = new vector<switchCandidate>[this->n1];
 	align->right_project = new int[this->n1];
 	for(i = 0; i < this->n1; i++) {
 		align->right_project[i] = -1;
 	}
 
-	align->PrefG = new vector<int>[this->n2];
+	align->PrefG = new vector<switchCandidate>[this->n2];
 	align->left_project = new int[this->n2];
 	for(i = 0; i < this->n2; i++) {
 		align->left_project[i] = -1;
 	}
 
+	switchCandidate cand;
+
 	for (i = 0; i < align->match_no; i++) {
 		align->left_match[i] = (int)mi[i];
 		align->right_match[i] = (int)mj[i];
 
-		align->PrefG[align->right_match[i]].push_back(align->left_match[i]);
-		align->PrefH[align->left_match[i]].push_back(align->right_match[i]);
+
+		cand.vertex_id = align->left_match[i];
+		cand.topo_sim = x_final[this->n2*cand.vertex_id + align->right_match[i]];
+		cand.seq_sim = w_vec[this->n2*cand.vertex_id + align->right_match[i]];
+		align->PrefG[align->right_match[i]].push_back(cand);
+
+
+		cand.vertex_id = align->right_match[i];
+		cand.topo_sim = x_final[this->n2*align->left_match[i] + cand.vertex_id];
+		cand.seq_sim = w_vec[this->n2*align->left_match[i] + cand.vertex_id];
+		align->PrefH[align->left_match[i]].push_back(cand);
+
 
 		align->left_project[align->right_match[i]] = align->left_match[i];
 		align->right_project[align->left_match[i]] = align->right_match[i];
@@ -666,7 +681,11 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
    printf("\tAdding bMatches to H preferred set\n"); fflush(stdout);
 	for (i = 0; i < this->n1; i++) {
         for(j = 0; j < (unsigned int) S[i].curSize; j++) {
-    		align->PrefH[i].push_back((S[i].heap[j].id) - this->n1);
+    		cand.vertex_id = (S[i].heap[j].id) - this->n1;
+    		cand.topo_sim = x_final[this->n2*i + cand.vertex_id];
+    		cand.seq_sim = w_vec[this->n2*i + cand.vertex_id];
+
+    		align->PrefH[i].push_back( cand );
         }
 	}
 
@@ -674,7 +693,11 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
     printf("\tAdding bMatches to G preferred set\n"); fflush(stdout);
 	for (i = 0; i < this->n2; i++) {
         for(j = 0; j < (unsigned int) S[i+this->n1].curSize; j++) {
-    		align->PrefG[i].push_back(S[i+this->n1].heap[j].id);
+    		cand.vertex_id = S[i+this->n1].heap[j].id;
+    		cand.topo_sim = x_final[this->n2*cand.vertex_id + i];
+    		cand.seq_sim = w_vec[this->n2*cand.vertex_id + i];
+
+        	align->PrefG[i].push_back( cand );
         }
 	}
 
@@ -682,7 +705,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	/*for(i = 0; i < align->match_no; i++) {
 		printf("Mi[%d] =  %d (%s) in G\n", i, align->left_match[i], this->G->getVertexName(align->left_match[i]));
 		for(j = 0; j < align->PrefH[align->left_match[i]].size(); j++) {
-			printf("\tVertex %d (%s) in H\n", align->PrefH[align->left_match[i]][j], this->H->getVertexName(align->PrefH[align->left_match[i]][j]));
+			printf("\tVertex %d (%s) in H\n", align->PrefH[align->left_match[i]][j].vertex_id, this->H->getVertexName(align->PrefH[align->left_match[i]][j].vertex_id));
 		}
 	}
 
@@ -690,12 +713,13 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	for(i = 0; i < align->match_no; i++) {
 		printf("Mj[%d] =  %d (%s) in H\n", i, align->right_match[i], this->H->getVertexName(align->right_match[i]));
 		for(j = 0; j < align->PrefG[align->right_match[i]].size(); j++) {
-			printf("\tVertex %d (%s) in G\n", align->PrefG[align->right_match[i]][j], this->G->getVertexName(align->PrefG[align->right_match[i]][j]));
+			printf("\tVertex %d (%s) in G\n", align->PrefG[align->right_match[i]][j].vertex_id, this->G->getVertexName(align->PrefG[align->right_match[i]][j].vertex_id));
 		}
 	}*/
 
 
 	// Prune Pref sets to only have homogenously high SeqSim entries (remove ones that are significantly lower that the others)
+	PrunePrefs(align, this->w_vec.memptr());
 
 	Move new_move, best_move;
 
@@ -724,7 +748,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 
 			left_unmatched.clear(); // Nodes on the left side (G) that are in Pref set of i' and are either matched/unmatched
  			for(l = 0; l < align->PrefG[i_prime].size(); l++) {
-				j = align->PrefG[i_prime][l];
+				j = align->PrefG[i_prime][l].vertex_id;
 				if(align->right_project[j] == -1) {
 					left_unmatched.push_back(j);
 				}
@@ -732,7 +756,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 
 			right_unmatched.clear();
 			for(l = 0; l < align->PrefH[i].size(); l++) {
-				j_prime = align->PrefH[i][l];
+				j_prime = align->PrefH[i][l].vertex_id;
 				if(align->left_project[j_prime] == -1) {
 					right_unmatched.push_back(j_prime);
 				}
@@ -783,7 +807,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 				// Prune based on preferred sets
 				// 1) Make sure j' \in PrefH(i)
 				for(s = 0; s < align->PrefH[i].size(); s++) {
-					if(align->PrefH[i][s] == (int)j_prime)
+					if(align->PrefH[i][s].vertex_id == (int)j_prime)
 						break;
 				}
 				if(s == align->PrefH[i].size())
@@ -791,7 +815,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 
 				// 1) Make sure j \in PrefG(i')
 				for(s = 0; s < align->PrefG[i_prime].size(); s++) {
-					if(align->PrefG[i_prime][s] == (int)j)
+					if(align->PrefG[i_prime][s].vertex_id == (int)j)
 						break;
 				}
 				if(s == align->PrefG[i].size())
@@ -828,7 +852,65 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	return align;
 }
 
-double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
+void ProdTensor::PrunePrefs(alignment *align, double *w) {
+	register unsigned int i, j, nnz;
+
+	double sum, sumSq;
+	for (i = 0; i < this->n1; i++) {
+		stable_sort(align->PrefH[i].begin(), align->PrefH[i].end(), SeqSim_cmp);
+
+/*		printf("PrefH[%d] \n",i);
+		for(j = 0; j < align->PrefH[i].size(); j++) {
+			printf("\t%.2f ", align->PrefH[i][j].seq_sim);
+		}
+		printf("\n");*/
+
+		// Compute # of effective nnz
+		sum = sumSq = 0;
+		for(j = 0; j < align->PrefH[i].size(); j++) {
+			sum += align->PrefH[i][j].seq_sim;
+			sumSq += (align->PrefH[i][j].seq_sim*align->PrefH[i][j].seq_sim);
+		}
+		nnz = round((sum*sum) / sumSq);
+		align->PrefH[i].resize(nnz);
+
+/*		printf("PrefH[%d] (after)\n",i);
+		for(j = 0; j < align->PrefH[i].size(); j++) {
+			printf("\t%.2f ", align->PrefH[i][j].seq_sim);
+		}
+		printf("\n");*/
+	}
+
+
+	for (i = 0; i < this->n2; i++) {
+		stable_sort(align->PrefG[i].begin(), align->PrefG[i].end(), SeqSim_cmp);
+
+/*		printf("PrefG[%d]\n",i);
+		for(j = 0; j < align->PrefG[i].size(); j++) {
+			printf("\t%.2f ", align->PrefG[i][j].seq_sim);
+		}
+		printf("\n");*/
+
+		// Compute # of effective nnz
+		sum = sumSq = 0;
+		for(j = 0; j < align->PrefG[i].size(); j++) {
+			sum += align->PrefG[i][j].seq_sim;
+			sumSq += (align->PrefG[i][j].seq_sim*align->PrefG[i][j].seq_sim);
+		}
+		nnz = round((sum*sum) / sumSq);
+		align->PrefG[i].resize(nnz);
+
+/*		printf("PrefG[%d] (after)\n",i);
+		for(j = 0; j < align->PrefG[i].size(); j++) {
+			printf("\t%.2f ", align->PrefG[i][j].seq_sim);
+		}
+		printf("\n");*/
+	}
+
+}
+
+
+double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 	new_move.score = 0;
 
 	/*int i = align->left_match[new_move.m_id[0]];
@@ -1079,9 +1161,21 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	printf("\t\t\tdt full export = %f\n", timer.toc());
 */
 
-	alignment* result = postprocess(best_x.memptr(), 100, 20);
+	alignment* result = postprocess(best_x.memptr(), 100, 100);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
+
+	timer.tic();
+	sprintf(x_path, "%s/%s_alpha=%.2e_X.smat", output_path, prefix,  alpha);
+	printf("Exporting final solution to %s ... ", x_path);
+	FILE *fd = fopen(x_path, "w");
+	fprintf(fd, "%d\t%d\t%d\n", this->n1, this->n2, (int)result->match_no);
+	for(j = 0; j < (unsigned int)result->match_no; j++) {
+		fprintf(fd, "%d\t%d\t1\n", result->left_match[j], result->right_match[j]);
+	}
+	fclose(fd);
+	printf("Done!");
+
 
 /*	// Export binarized matrix X
 	myStats = evalX(best_x.memptr()); // also sets mi, mj because it runs matching
