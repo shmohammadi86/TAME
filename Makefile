@@ -1,7 +1,7 @@
 CXX=g++
 INCLUDE=-I./include -I./armadillo/include
 LIB_FLAGS=-lblas -llapack #-L./armadillo -larmadillo
-CXXFLAGS=$(INCLUDE) -march=native -g -O3 -funroll-loops -msse2  -Wall -Wno-write-strings -fopenmp
+CXXFLAGS=$(INCLUDE) -g3 -Wall -Wno-write-strings -fopenmp
 SRC=src/main.cc src/graph.cc src/io.cc src/triangle.cc src/tensor.cc
 OBJ=$(SRC:.cc=.o)
 PROGRAM=tri-match
