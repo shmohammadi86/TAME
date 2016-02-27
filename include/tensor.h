@@ -30,8 +30,8 @@ struct stats {
 };
 
 struct alignment {
-	int *left_match; // left_match[e] is the vertex in G for the e^th match in the alignment
-	int *right_match; // right_match[e] is the vertex in G for the e^th match in the alignment
+	vector<int> left_match; // left_match[e] is the vertex in G for the e^th match in the alignment
+	vector<int> right_match; // right_match[e] is the vertex in G for the e^th match in the alignment
 	vector<int> *PrefG; // For every vertex i' in H, PrefG[i'] is the set of potential matches for i' in G
 	vector<int> *PrefH; // For every vertex i in G, PrefH[i] is the set of potential matches for i in H
 
@@ -43,6 +43,15 @@ struct alignment {
 	unsigned long int conserved_triangles;
 	double total_seqSim;
 };
+
+struct Move { // Encodes even-sized augmenting paths
+	unsigned move_no;
+	vector<int> m_id; // index of match edges to be swapped
+	vector< vector<int> > e; // new edge to replace each
+
+	double score;
+};
+
 
 double normalize(double *v_norm, double *v, unsigned long n);
 double *initUniformX(long int n);
@@ -79,8 +88,10 @@ private:
 
 	long countTrianglesUnderAlignment(vector<int> mi, vector<int> mj);
 	long DeltaT_removeMatch(vector<int> mi, vector<int> mj, unsigned int i);
-	long DeltaT_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<unsigned int> e);
-
+	long DeltaT_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<int> e);
+	double 	evaluateMove(Move &new_move, alignment *align);
+	void copyMove(Move &dst, Move& src);
+	void applyMove(Move &best_move, alignment* align);
 
 
 
