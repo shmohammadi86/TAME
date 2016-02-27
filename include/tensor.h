@@ -3,6 +3,7 @@
 #include <generics.h>
 #include <triangle.h>
 #include <io.h>
+#include <algorithm>
 
 #include "bMatching.h"
 #include "mtxReader.h"
@@ -29,14 +30,23 @@ struct stats {
 	double correctness;
 };
 
+struct switchCandidate {
+	int vertex_id;
+	double topo_sim;
+	double seq_sim;
+};
+
+
 struct alignment {
 	vector<int> left_match; // left_match[e] is the vertex in G for the e^th match in the alignment
 	vector<int> right_match; // right_match[e] is the vertex in G for the e^th match in the alignment
-	vector<int> *PrefG; // For every vertex i' in H, PrefG[i'] is the set of potential matches for i' in G
-	vector<int> *PrefH; // For every vertex i in G, PrefH[i] is the set of potential matches for i in H
 
 	int *left_project; //  For every vertex i' in H, it holds the projection of i' into G. In otherwords, it is either a vertex id i in G, if i' is matched, or -1 if it is not matched
 	int *right_project; //  For every vertex i in G, it holds the projection of i into H. In otherwords, it is either a vertex id i' in H, if i is matched, or -1 if it is not matched
+
+	vector<switchCandidate> *PrefG; // For every vertex i' in H, PrefG[i'] is the set of potential matches for i' in G
+	vector<switchCandidate> *PrefH; // For every vertex i in G, PrefH[i] is the set of potential matches for i in H
+
 
 	unsigned long int  match_no;
 	unsigned long int conserved_edges;
@@ -93,7 +103,7 @@ private:
 	double 	evaluateMove(Move &new_move, alignment *align);
 	void copyMove(Move &dst, Move& src);
 	void applyMove(Move &best_move, alignment* align);
-
+	void PrunePrefs(alignment *align, double *w);
 
 
 	TriangleCounts *T_G, *T_H;
