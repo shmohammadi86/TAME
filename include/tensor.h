@@ -54,12 +54,20 @@ struct alignment {
 	double total_seqSim;
 };
 
+struct Delta {
+	long triangle;
+	long edge;
+	double seqsim;
+
+	double score;
+};
+
 struct Move { // Encodes even-sized augmenting paths
 	unsigned move_no;
 	vector<int> m_id; // index of match edges to be swapped
 	vector< vector<int> > e; // new edge to replace each
 
-	double score;
+	Delta delta;
 };
 
 
@@ -98,8 +106,8 @@ private:
 
 	long countTrianglesUnderAlignment(vector<int> mi, vector<int> mj);
 	long countTEdgesUnderAlignment(vector<int> mi, vector<int> mj);
-	long DeltaT_removeMatch(vector<int> mi, vector<int> mj, unsigned int i);
-	long DeltaT_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<int> e);
+	Delta Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int i);
+	Delta Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<int> e);
 	double 	evaluateMove(Move &new_move, alignment *align);
 	void copyMove(Move &dst, Move& src);
 	void applyMove(Move &best_move, alignment* align);
