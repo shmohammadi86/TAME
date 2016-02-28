@@ -846,7 +846,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 		}
 
 	}
-	align->conserved_edges = countTEdgesUnderAlignment(align->left_match, align->right_match);
+	align->conserved_edges = countEdgesUnderAlignment(align->left_match, align->right_match);
 	align->conserved_triangles = countTrianglesUnderAlignment(align->left_match, align->right_match);
 
 	return align;
@@ -911,17 +911,20 @@ void ProdTensor::PrunePrefs(alignment *align, double *w) {
 
 
 double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
-	/*int i = align->left_match[new_move.m_id[0]];
+/*	int i = align->left_match[new_move.m_id[0]];
 	int j = align->left_match[new_move.m_id[1]];
 	int i_prime = align->right_match[new_move.m_id[0]];
 	int j_prime = align->right_match[new_move.m_id[1]];
 	if(new_move.move_no == 1) {
-		printf("\tEvaluating %d <-> %d versus %d <-> %d ... ", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
+		printf("\tEvaluating %d <-> %d versus %d <-> %d ... \n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
 	}
 	else if(new_move.move_no == 2) {
-		printf("\tEvaluating %d <-> %d and %d <-> %d versus %d <-> %d and %d <-> %d ... ", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
+		printf("\tEvaluating %d <-> %d and %d <-> %d versus %d <-> %d and %d <-> %d ... \n", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
 	}
 */
+
+	vector<int> new_mi = align->left_match;
+	vector<int> new_mj = align->right_match;
 	Delta delta_loss, delta_gain;
 	bzero(&(new_move.delta), sizeof(Delta));
 	unsigned register int k;
@@ -937,8 +940,7 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 	}
 	else  {
 		// Aggregated removal cost and update alignment with the new move
-		vector<int> new_mi = align->left_match;
-		vector<int> new_mj = align->right_match;
+
 		for(k = 0; k < new_move.move_no; k++) {
 			delta_loss = Delta_removeMatch(align->left_match, align->right_match, new_move.m_id[k]);
 
@@ -961,10 +963,8 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 					continue;
 
 				if( (G->getEdge(align->left_match[i], align->left_match[k]) && H->getEdge(align->right_match[i], align->right_match[k])) ) {
-					new_move.delta.edge ++;
 					if ((G->getEdge(align->left_match[j], align->left_match[k]) && H->getEdge(align->right_match[j], align->right_match[k])) ) {
 						new_move.delta.triangle ++;
-						new_move.delta.edge ++;
 					}
 				}
 			}
@@ -974,6 +974,7 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 		// Compute the gain from added edges
 		for(k = 0; k < new_move.move_no; k++) {
 			delta_gain =  Delta_addMatch(new_mi, new_mj, new_move.m_id[k], new_move.e[k]);
+
 			new_move.delta.triangle += delta_gain.triangle;
 			new_move.delta.edge += delta_gain.edge;
 			new_move.delta.seqsim += this->w_vec(this->n2 * new_move.e[k][0] + new_move.e[k][1]);
@@ -989,17 +990,19 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 					continue;
 
 				if( (G->getEdge(new_mi[new_move.m_id[0]], align->left_match[k]) && H->getEdge(new_mj[new_move.m_id[0]], align->right_match[k])) ) {
-					new_move.delta.edge --;
 					if( (G->getEdge(new_mi[new_move.m_id[1]], align->left_match[k]) && H->getEdge(new_mj[new_move.m_id[1]], align->right_match[k])) ) {
 						new_move.delta.triangle --;
-						new_move.delta.edge --;
 					}
 				}
 			}
 		}
 /*		printf("\tStep 4 = %lf\n", new_move.new_move.delta.triangle);*/
 
+/*		printf("Actual edges = %ld, triangles = %ld\n", countEdgesUnderAlignment(new_mi, new_mj) - countEdgesUnderAlignment(align->left_match, align->right_match), countTrianglesUnderAlignment(new_mi, new_mj) - countTrianglesUnderAlignment(align->left_match, align->right_match));
+		printf("Estimated edges = %ld, triangle = %ld\n", new_move.delta.edge, new_move.delta.triangle);*/
 	}
+
+
 
 	new_move.delta.score = new_move.delta.triangle;
 	return new_move.delta.score;
@@ -1248,17 +1251,17 @@ Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int
 	for(j = 0; j < mi.size(); j++) {
 		if(i == j)
 			continue;
-		if(!G->getEdge(mi[i], mi[j]) || !H->getEdge(mj[i], mj[j]) )
+
+		if( !G->getEdge(mi[i], mi[j]) || !H->getEdge(mj[i], mj[j]) )
 			continue;
 		else
 			delta.edge++;
+
 		for(k = j+1; k < mi.size(); k++) {
 			if(i == k)
 				continue;
 			if( (G->getEdge(mi[i], mi[k]) && H->getEdge(mj[i], mj[k])) ) {
-				delta.edge++;
 				if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
-					delta.edge++;
 					delta.triangle ++;
 				}
 			}
@@ -1280,17 +1283,17 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 	for(j = 0; j < mi.size(); j++) {
 		if(i == j)
 			continue;
-		if(!G->getEdge(e[0], mi[j]) || !H->getEdge(mj[i], e[1]) )
+
+		if( !G->getEdge(e[0], mi[j]) || !H->getEdge(e[1], mj[j]) )
 			continue;
 		else
 			delta.edge++;
+
 		for(k = j+1; k < mi.size(); k++) {
 			if(i == k)
 				continue;
-			if( (G->getEdge(e[0], mi[k]) && H->getEdge(mj[i], mj[k])) ) {
-				delta.edge++;
-				if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(e[1], mj[k])) ) {
-					delta.edge++;
+			if( (G->getEdge(e[0], mi[k]) && H->getEdge(e[1], mj[k])) ) {
+				if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
 					delta.triangle ++;
 				}
 			}
@@ -1323,7 +1326,7 @@ long ProdTensor::countTrianglesUnderAlignment(vector<int> mi, vector<int> mj) {
 	return tri_count;
 }
 
-long ProdTensor::countTEdgesUnderAlignment(vector<int> mi, vector<int> mj) {
+long ProdTensor::countEdgesUnderAlignment(vector<int> mi, vector<int> mj) {
 	register unsigned int i, j;
 
 	 long edge_count = 0;
