@@ -32,8 +32,6 @@ struct stats {
 
 struct switchCandidate {
 	int vertex_id;
-	double topo_sim;
-	double seq_sim;
 };
 
 
@@ -52,12 +50,15 @@ struct alignment {
 	unsigned long int conserved_edges;
 	unsigned long int conserved_triangles;
 	double total_seqSim;
+	int ortho_count;
 };
 
 struct Delta {
 	long triangle;
 	long edge;
 	double seqsim;
+	int ortho_count;
+	double TriSim;
 
 	double score;
 };
@@ -70,6 +71,12 @@ struct Move { // Encodes even-sized augmenting paths
 	Delta delta;
 };
 
+struct Match_deg {
+	int match_id;
+	long edge_deg;
+	long tri_deg;
+	double score_deg;
+};
 
 double normalize(double *v_norm, double *v, unsigned long n);
 double *initUniformX(long int n);
@@ -80,7 +87,8 @@ public:
 	ProdTensor(Graph *G, TriangleCounts* T_G, Graph *H, TriangleCounts* T_H, double *w, Sparsity_Type sparsity_flag, char *output_path, char *prefix);
 	void impTTV(double *new_x, double *x);
 	eigen* issHOPM(int max_it, double alpha, double beta, double epsilon, double *w, double *x0, int init_type);
-	alignment* postprocess(double *x_final, int max_iter, int fixed_b);
+	alignment* postprocess(double *x_final, int max_iter, int topoDeg, int seqDeg, double seqSim_threshold);
+	void addPref(alignment* align, double *weights, int B);
 	
 	stats evalX(double *x);
 	int InitX(double *x, int init_type, double *w = NULL);
@@ -111,7 +119,6 @@ private:
 	double 	evaluateMove(Move &new_move, alignment *align);
 	void copyMove(Move &dst, Move& src);
 	void applyMove(Move &best_move, alignment* align);
-	void PrunePrefs(alignment *align, double *w);
 
 
 	TriangleCounts *T_G, *T_H;
@@ -130,6 +137,7 @@ private:
 	double alpha, beta, sigma;
 	vec x_vec, x_hat_vec, w_vec, best_x, mixed_x;
 	mat X;
+	double *pruned_w;
 	vector<int> unmatched_rows, unmatched_cols, unmatched_pairs_row, unmatched_pairs_col;
 
 };

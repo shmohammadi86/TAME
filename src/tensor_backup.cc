@@ -6,6 +6,12 @@ extern char *InitType_names[];
 bool *G_isMatched, *H_isMatched;
 double *rows, *cols, *edge_weights, *mi, *mj; // matching aux. vectors
 
+bool SeqSim_cmp (switchCandidate x, switchCandidate y) { return (y.seq_sim < x.seq_sim ); }
+bool triDeg_cmp (Match_deg x, Match_deg y) { return (y.tri_deg < x.tri_deg ); }
+bool edgeDeg_cmp (Match_deg x, Match_deg y) { return (y.edge_deg < x.edge_deg ); }
+bool scoreDeg_cmp (Match_deg x, Match_deg y) { return (y.score_deg < x.score_deg ); }
+
+
 
 
 /**
@@ -505,6 +511,11 @@ void ProdTensor::Shift(int shift_type) {
 	}
 }
 
+
+void ProdTensor::addPref(alignment* align, double *w, int b) {
+
+}
+
 alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree) {
 /*
 	this->n1 = this->G->n;
@@ -512,7 +523,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	this->n = n1*n2;  number of edges in L
 */
 	printf("Post-processing ... \n");
-	int bMatching_alg = 13;
+	int bMatching_alg = 3;
     bool verbose = false;
 	int fixed_b = max(0, max_degree - 1); // Hungarian edge + (b-1)
 
@@ -523,6 +534,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	alignment *align = new alignment;
 
 	stats myStats = evalX(temp_x);
+
 	align->conserved_edges = myStats.M;
 	align->conserved_triangles = myStats.T;
 	align->match_no = myStats.num_matches;
@@ -531,31 +543,46 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	align->left_match.resize(align->match_no);
 	align->right_match.resize(align->match_no);
 
-	align->PrefH = new vector<int>[this->n1];
+	align->PrefH = new vector<switchCandidate>[this->n1];
 	align->right_project = new int[this->n1];
 	for(i = 0; i < this->n1; i++) {
 		align->right_project[i] = -1;
 	}
 
-	align->PrefG = new vector<int>[this->n2];
+	align->PrefG = new vector<switchCandidate>[this->n2];
 	align->left_project = new int[this->n2];
 	for(i = 0; i < this->n2; i++) {
 		align->left_project[i] = -1;
 	}
 
+	switchCandidate cand;
+
 	for (i = 0; i < align->match_no; i++) {
 		align->left_match[i] = (int)mi[i];
 		align->right_match[i] = (int)mj[i];
 
-		align->PrefG[align->right_match[i]].push_back(align->left_match[i]);
-		align->PrefH[align->left_match[i]].push_back(align->right_match[i]);
+
+		cand.vertex_id = align->left_match[i];
+		cand.topo_sim = x_final[this->n2*cand.vertex_id + align->right_match[i]];
+		cand.seq_sim = w_vec[this->n2*cand.vertex_id + align->right_match[i]];
+		align->PrefG[align->right_match[i]].push_back(cand);
+
+
+		cand.vertex_id = align->right_match[i];
+		cand.topo_sim = x_final[this->n2*align->left_match[i] + cand.vertex_id];
+		cand.seq_sim = w_vec[this->n2*align->left_match[i] + cand.vertex_id];
+		align->PrefH[align->left_match[i]].push_back(cand);
+
 
 		align->left_project[align->right_match[i]] = align->left_match[i];
 		align->right_project[align->left_match[i]] = align->right_match[i];
 
 		temp_x[align->left_match[i]*this->n2+align->right_match[i]] = 0;
 	}
-
+	align->total_seqSim = 0;
+	for (l = 0; l < align->match_no; l++) {
+		align->total_seqSim += w_vec[this->n2 * align->left_match[l] + align->right_match[l]];
+	}
 
 	printf("\tConstructing initial graph for bMatching\n"); fflush(stdout);
     CSR G;
@@ -601,7 +628,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 		S[i].heap=(Info*)malloc(max(1, b[i])*sizeof(Info));      //Each heap of size b
 		S[i].curSize = 0;
 		if(bMatching_alg==5 || bMatching_alg ==0)
-			S1[i].heap=(Info*)malloc(max(1, b[i])*sizeof(Info));      //Each heap of size b
+			S1[i].heap=(Info*)malloc(max(this->n1, this->n2)*sizeof(Info));      //Each heap of size b
 	}
 
     stack_pcl<Param>* St=NULL;
@@ -667,7 +694,11 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
    printf("\tAdding bMatches to H preferred set\n"); fflush(stdout);
 	for (i = 0; i < this->n1; i++) {
         for(j = 0; j < (unsigned int) S[i].curSize; j++) {
-    		align->PrefH[i].push_back((S[i].heap[j].id) - this->n1);
+    		cand.vertex_id = (S[i].heap[j].id) - this->n1;
+    		cand.topo_sim = x_final[this->n2*i + cand.vertex_id];
+    		cand.seq_sim = w_vec[this->n2*i + cand.vertex_id];
+
+    		align->PrefH[i].push_back( cand );
         }
 	}
 
@@ -675,7 +706,11 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
     printf("\tAdding bMatches to G preferred set\n"); fflush(stdout);
 	for (i = 0; i < this->n2; i++) {
         for(j = 0; j < (unsigned int) S[i+this->n1].curSize; j++) {
-    		align->PrefG[i].push_back(S[i+this->n1].heap[j].id);
+    		cand.vertex_id = S[i+this->n1].heap[j].id;
+    		cand.topo_sim = x_final[this->n2*cand.vertex_id + i];
+    		cand.seq_sim = w_vec[this->n2*cand.vertex_id + i];
+
+        	align->PrefG[i].push_back( cand );
         }
 	}
 
@@ -683,7 +718,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	/*for(i = 0; i < align->match_no; i++) {
 		printf("Mi[%d] =  %d (%s) in G\n", i, align->left_match[i], this->G->getVertexName(align->left_match[i]));
 		for(j = 0; j < align->PrefH[align->left_match[i]].size(); j++) {
-			printf("\tVertex %d (%s) in H\n", align->PrefH[align->left_match[i]][j], this->H->getVertexName(align->PrefH[align->left_match[i]][j]));
+			printf("\tVertex %d (%s) in H\n", align->PrefH[align->left_match[i]][j].vertex_id, this->H->getVertexName(align->PrefH[align->left_match[i]][j].vertex_id));
 		}
 	}
 
@@ -691,12 +726,99 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 	for(i = 0; i < align->match_no; i++) {
 		printf("Mj[%d] =  %d (%s) in H\n", i, align->right_match[i], this->H->getVertexName(align->right_match[i]));
 		for(j = 0; j < align->PrefG[align->right_match[i]].size(); j++) {
-			printf("\tVertex %d (%s) in G\n", align->PrefG[align->right_match[i]][j], this->G->getVertexName(align->PrefG[align->right_match[i]][j]));
+			printf("\tVertex %d (%s) in G\n", align->PrefG[align->right_match[i]][j].vertex_id, this->G->getVertexName(align->PrefG[align->right_match[i]][j].vertex_id));
 		}
 	}*/
 
 
 	// Prune Pref sets to only have homogenously high SeqSim entries (remove ones that are significantly lower that the others)
+	//PrunePrefs(align, this->w_vec.memptr());
+
+
+
+
+
+    CSR H;
+    H.DenseVec2CSR(w_vec.memptr(), this->n1, this->n2);
+    for(i = 0; i < (unsigned int)H.nVer; i++) {
+		int card=0;
+		for(j = H.verPtr[i]; j < (unsigned int)H.verPtr[i+1]; j++)
+			if(H.verInd[j].weight>0)
+				card++;
+
+		if(card>fixed_b)
+			b[i]=fixed_b;
+		else b[i]=max(1, card);
+    }
+
+
+    localDom(&H,S,b,start,end,nlocks,stepM,2,verbose);
+
+
+	for (i = 0; i < this->n1; i++) {
+        for(j = 0; j < (unsigned int) S[i].curSize; j++) {
+    		cand.vertex_id = (S[i].heap[j].id) - this->n1;
+    		cand.topo_sim = x_final[this->n2*i + cand.vertex_id];
+    		cand.seq_sim = w_vec[this->n2*i + cand.vertex_id];
+
+    		align->PrefH[i].push_back( cand );
+        }
+	}
+
+
+    printf("\tAdding bMatches to G preferred set\n"); fflush(stdout);
+	for (i = 0; i < this->n2; i++) {
+        for(j = 0; j < (unsigned int) S[i+this->n1].curSize; j++) {
+    		cand.vertex_id = S[i+this->n1].heap[j].id;
+    		cand.topo_sim = x_final[this->n2*cand.vertex_id + i];
+    		cand.seq_sim = w_vec[this->n2*cand.vertex_id + i];
+
+        	align->PrefG[i].push_back( cand );
+        }
+	}
+
+
+
+
+
+
+
+
+
+	for (i = 0; i < this->n1; i++) {
+		align->PrefH[i].clear();
+		for (j = 0; j < this->n2; j++) {
+    		cand.vertex_id = j;
+    		cand.topo_sim = x_final[this->n2*i + cand.vertex_id];
+    		cand.seq_sim = w_vec[this->n2*i + cand.vertex_id];
+
+    		align->PrefH[i].push_back( cand );
+		}
+	}
+
+	for (i = 0; i < this->n2; i++) {
+		align->PrefG[i].clear();
+		for (j = 0; j < this->n1; j++) {
+    		cand.vertex_id = j;
+    		cand.topo_sim = x_final[this->n2*cand.vertex_id + i];
+    		cand.seq_sim = w_vec[this->n2*cand.vertex_id + i];
+
+        	align->PrefG[i].push_back( cand );
+		}
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	Move new_move, best_move;
 
@@ -708,15 +830,54 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 		new_move.e[i].resize(2); // reserve size for end points of matching edges
 	}
 
+	best_move.m_id.resize(max_length);
+	best_move.e.resize(max_length); // We only consider moves of size up to 2 (size 4 paths)
+	for(i = 0; i < max_length; i++) {
+		best_move.e[i].resize(2); // reserve size for end points of matching edges
+	}
+
+	double total_improvement = 0;
+	long Delta_tri = 0, Delta_edge = 0, Delta_seqsim = 0;
+
+	vector<Match_deg> match_degree;
+	match_degree.resize(align->match_no);
+	Delta curr_match_delta;
+	double row_sum, col_sum;
 	vector<int> right_unmatched, left_unmatched, matched_candidates;
 	for(it = 0; it < (unsigned int)max_iter; it++) {
-		best_move.score = -1; best_move.move_no = 0;
+		printf("Iteration %d \n", it);
+		total_improvement = 0;
+		Delta_tri = Delta_edge = Delta_seqsim = 0;
+
 		for(k = 0; k < align->match_no; k++) {
+			match_degree[k].match_id = k;
+			curr_match_delta = Delta_removeMatch(align->left_match, align->right_match, k);
+			match_degree[k].edge_deg = curr_match_delta.edge;
+			match_degree[k].tri_deg = curr_match_delta.triangle;
+			row_sum = col_sum = 0;
+
+			for(l = 0; l < this->n1; l++) {
+				col_sum += x_final[this->n2*l + align->right_match[k]];
+			}
+			for(l = 0; l < this->n2; l++) {
+				row_sum += x_final[this->n2*align->left_match[k] + l];
+			}
+
+			match_degree[k].score_deg = (row_sum/this->n2 + col_sum/this->n1);// / max(row_sum, col_sum);
+		}
+/*		stable_sort(match_degree.begin(), match_degree.end(), triDeg_cmp);*/
+/*		stable_sort(match_degree.begin(), match_degree.end(), edgeDeg_cmp);*/
+		stable_sort(match_degree.begin(), match_degree.end(), scoreDeg_cmp);
+
+		for(unsigned int d = 0; d < align->match_no; d++) {
+			k = match_degree[d].match_id;
+			best_move.move_no = 0;
+			bzero(&(best_move.delta), sizeof(Delta));
 			i = align->left_match[k]; i_prime = align->right_match[k];
 
 			left_unmatched.clear(); // Nodes on the left side (G) that are in Pref set of i' and are either matched/unmatched
  			for(l = 0; l < align->PrefG[i_prime].size(); l++) {
-				j = align->PrefG[i_prime][l];
+				j = align->PrefG[i_prime][l].vertex_id;
 				if(align->right_project[j] == -1) {
 					left_unmatched.push_back(j);
 				}
@@ -724,7 +885,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 
 			right_unmatched.clear();
 			for(l = 0; l < align->PrefH[i].size(); l++) {
-				j_prime = align->PrefH[i][l];
+				j_prime = align->PrefH[i][l].vertex_id;
 				if(align->left_project[j_prime] == -1) {
 					right_unmatched.push_back(j_prime);
 				}
@@ -738,9 +899,9 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 				j = left_unmatched[l];
 				new_move.e[0][0] = j;
 
-				printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
+				//printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
 				evaluateMove(new_move, align);
-				if(best_move.score < new_move.score ) {
+				if(best_move.delta.score < new_move.delta.score ) {
 					copyMove(best_move, new_move);
 				}
 			}
@@ -750,9 +911,9 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 				j_prime = right_unmatched[l];
 				new_move.e[0][1] = j_prime;
 
-				printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
+				//printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
 				evaluateMove(new_move, align);
-				if(best_move.score < new_move.score ) {
+				if(best_move.delta.score < new_move.delta.score ) {
 					copyMove(best_move, new_move);
 				}
 			}
@@ -775,7 +936,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 				// Prune based on preferred sets
 				// 1) Make sure j' \in PrefH(i)
 				for(s = 0; s < align->PrefH[i].size(); s++) {
-					if(align->PrefH[i][s] == (int)j_prime)
+					if(align->PrefH[i][s].vertex_id == (int)j_prime)
 						break;
 				}
 				if(s == align->PrefH[i].size())
@@ -783,7 +944,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 
 				// 1) Make sure j \in PrefG(i')
 				for(s = 0; s < align->PrefG[i_prime].size(); s++) {
-					if(align->PrefG[i_prime][s] == (int)j)
+					if(align->PrefG[i_prime][s].vertex_id == (int)j)
 						break;
 				}
 				if(s == align->PrefG[i].size())
@@ -793,74 +954,205 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int max_degree
 
 				// Prune based on edges
 
-				printf("Swap %d <-> %d and %d <-> %d with %d <-> %d and %d <-> %d\n", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
+				//printf("Swap %d <-> %d and %d <-> %d with %d <-> %d and %d <-> %d\n", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
 				evaluateMove(new_move, align);
-				if(best_move.score < new_move.score ) {
+				if(best_move.delta.score < new_move.delta.score ) {
 					copyMove(best_move, new_move);
 				}
 			}
+			if(0 < best_move.delta.score) {
+				applyMove(best_move, align);
+				total_improvement += best_move.delta.score;
+				Delta_edge += best_move.delta.edge;
+				Delta_tri += best_move.delta.triangle;
+				Delta_seqsim += best_move.delta.seqsim;
+			}
+		}
+		if(0 < total_improvement) {
+			printf("Total improvement = %lf\n", total_improvement);
+			printf("\tDelta SeqSim = %ld\n", Delta_seqsim);
+			printf("\tDelta Edges = %ld\n", Delta_edge);
+			printf("\tDelta Triangles = %ld\n", Delta_tri);
+		}
+		else {
+			printf("No more improvement during a whole iteration. Exiting now.");
+			break;
 		}
 
-		if(best_move.score == -1)
-			break;
-		else
-			applyMove(best_move, align);
 	}
+	align->conserved_edges = countEdgesUnderAlignment(align->left_match, align->right_match);
+	align->conserved_triangles = countTrianglesUnderAlignment(align->left_match, align->right_match);
+	align->total_seqSim = 0;
+	for (l = 0; l < align->match_no; l++) {
+		align->total_seqSim += w_vec[this->n2 * align->left_match[l] + align->right_match[l]];
+	}
+
 	return align;
 }
 
-double 	ProdTensor::evaluateMove(Move &new_move, alignment* align) {
-	new_move.score = 0;
+void ProdTensor::PrunePrefs(alignment *align, double *w) {
+	register unsigned int i, j, nnz;
 
-	int i = align->left_match[new_move.m_id[0]];
+	double sum, sumSq;
+	for (i = 0; i < this->n1; i++) {
+		stable_sort(align->PrefH[i].begin(), align->PrefH[i].end(), SeqSim_cmp);
+
+/*		printf("PrefH[%d] \n",i);
+		for(j = 0; j < align->PrefH[i].size(); j++) {
+			printf("\t%.2f ", align->PrefH[i][j].seq_sim);
+		}
+		printf("\n");*/
+
+		// Compute # of effective nnz
+		sum = sumSq = 0;
+		for(j = 0; j < align->PrefH[i].size(); j++) {
+			sum += align->PrefH[i][j].seq_sim;
+			sumSq += (align->PrefH[i][j].seq_sim*align->PrefH[i][j].seq_sim);
+		}
+		nnz = round((sum*sum) / sumSq);
+		align->PrefH[i].resize(nnz);
+
+/*		printf("PrefH[%d] (after)\n",i);
+		for(j = 0; j < align->PrefH[i].size(); j++) {
+			printf("\t%.2f ", align->PrefH[i][j].seq_sim);
+		}
+		printf("\n");*/
+	}
+
+
+	for (i = 0; i < this->n2; i++) {
+		stable_sort(align->PrefG[i].begin(), align->PrefG[i].end(), SeqSim_cmp);
+
+/*		printf("PrefG[%d]\n",i);
+		for(j = 0; j < align->PrefG[i].size(); j++) {
+			printf("\t%.2f ", align->PrefG[i][j].seq_sim);
+		}
+		printf("\n");*/
+
+		// Compute # of effective nnz
+		sum = sumSq = 0;
+		for(j = 0; j < align->PrefG[i].size(); j++) {
+			sum += align->PrefG[i][j].seq_sim;
+			sumSq += (align->PrefG[i][j].seq_sim*align->PrefG[i][j].seq_sim);
+		}
+		nnz = round((sum*sum) / sumSq);
+		align->PrefG[i].resize(nnz);
+
+/*		printf("PrefG[%d] (after)\n",i);
+		for(j = 0; j < align->PrefG[i].size(); j++) {
+			printf("\t%.2f ", align->PrefG[i][j].seq_sim);
+		}
+		printf("\n");*/
+	}
+
+}
+
+
+double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
+/*	int i = align->left_match[new_move.m_id[0]];
 	int j = align->left_match[new_move.m_id[1]];
 	int i_prime = align->right_match[new_move.m_id[0]];
 	int j_prime = align->right_match[new_move.m_id[1]];
 	if(new_move.move_no == 1) {
-		printf("\tEvaluating %d <-> %d versus %d <-> %d ... ", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
+		printf("\tEvaluating %d <-> %d versus %d <-> %d ... \n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
 	}
 	else if(new_move.move_no == 2) {
-		printf("\tEvaluating %d <-> %d and %d <-> %d versus %d <-> %d and %d <-> %d ... ", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
+		printf("\tEvaluating %d <-> %d and %d <-> %d versus %d <-> %d and %d <-> %d ... \n", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
 	}
+*/
 
-	// Evaluate first swap first
-	new_move.score = DeltaT_addMatch(align->left_match, align->right_match, new_move.m_id[0], new_move.e[0])
-					- DeltaT_removeMatch(align->left_match, align->right_match, new_move.m_id[0]);
+	vector<int> new_mi = align->left_match;
+	vector<int> new_mj = align->right_match;
+	Delta delta_loss, delta_gain;
+	bzero(&(new_move.delta), sizeof(Delta));
+	unsigned register int k;
 
-	// Evaluate second swap, if needed
-	if(new_move.move_no == 2) {
-		new_move.score += (DeltaT_addMatch(align->left_match, align->right_match, new_move.m_id[1], new_move.e[1])
-						- DeltaT_removeMatch(align->left_match, align->right_match, new_move.m_id[1]));
+	if(new_move.move_no == 1) {
+		delta_loss = Delta_removeMatch(align->left_match, align->right_match, new_move.m_id[0]);
+		delta_gain = Delta_addMatch(align->left_match, align->right_match, new_move.m_id[0], new_move.e[0]);
 
-		// Now remove double counted triangle in between the two vertices in the alignment graph
-		// 1) triangles that we removed twice: add them back in!
-		unsigned register int i = new_move.m_id[0], j = new_move.m_id[1], k;
-		if(G->getEdge(align->left_match[i], align->left_match[j]) && H->getEdge(align->right_match[i], align->right_match[j]) ) { // Removed (alignment) nodes were connected, so they could have been part of shared triangles
-			for(k = j+1; k < align->match_no; k++) {
-				if( (G->getEdge(align->left_match[i], align->left_match[k]) && H->getEdge(align->right_match[i], align->right_match[k])) &&
-					(G->getEdge(align->left_match[j], align->left_match[k]) && H->getEdge(align->right_match[j], align->right_match[k])) ) {
-					new_move.score ++;
-				}
-			}
+		new_move.delta.triangle = delta_gain.triangle - delta_loss.triangle;
+		new_move.delta.edge = delta_gain.edge - delta_loss.edge;
+		new_move.delta.seqsim = this->w_vec(this->n2 * new_move.e[0][0] + new_move.e[0][1]) -
+				this->w_vec(this->n2 * align->left_match[new_move.m_id[0]] + align->right_match[new_move.m_id[0]]);
+	}
+	else  {
+		// Aggregated removal cost and update alignment with the new move
+
+		for(k = 0; k < new_move.move_no; k++) {
+			delta_loss = Delta_removeMatch(align->left_match, align->right_match, new_move.m_id[k]);
+
+			new_move.delta.triangle -= delta_loss.triangle;
+			new_move.delta.edge -= delta_loss.edge;
+			new_move.delta.seqsim -= this->w_vec(this->n2 * align->left_match[new_move.m_id[k]] + align->right_match[new_move.m_id[k]]);
+
+			new_mi[new_move.m_id[k]] = new_move.e[k][0];
+			new_mj[new_move.m_id[k]] = new_move.e[k][1];
 		}
+/*		printf("\tStep 1 = %lf\n", new_move.new_move.delta.triangle);*/
+
+
+		unsigned register int i = new_move.m_id[0], j = new_move.m_id[1];
+		// 1) triangles that we removed twice: add them back in!
+		if(G->getEdge(align->left_match[i], align->left_match[j]) && H->getEdge(align->right_match[i], align->right_match[j]) ) { // Removed (alignment) nodes were connected, so they could have been part of shared triangles
+			new_move.delta.edge ++;
+			/*for(k = 0; k < align->match_no; k++) {
+				if(k == i || k == j)
+					continue;
+
+				if( (G->getEdge(align->left_match[i], align->left_match[k]) && H->getEdge(align->right_match[i], align->right_match[k])) ) {
+					if ((G->getEdge(align->left_match[j], align->left_match[k]) && H->getEdge(align->right_match[j], align->right_match[k])) ) {
+						new_move.delta.triangle ++;
+					}
+				}
+			}*/
+		}
+/*		printf("\tStep 2 = %lf\n", new_move.new_move.delta.triangle);*/
+
+		// Compute the gain from added edges
+		for(k = 0; k < new_move.move_no; k++) {
+			delta_gain =  Delta_addMatch(new_mi, new_mj, new_move.m_id[k], new_move.e[k]);
+
+			new_move.delta.triangle += delta_gain.triangle;
+			new_move.delta.edge += delta_gain.edge;
+			new_move.delta.seqsim += this->w_vec(this->n2 * new_move.e[k][0] + new_move.e[k][1]);
+		}
+/*		printf("\tStep 3 = %lf\n", new_move.new_move.delta.triangle);*/
+
 
 		// 2) triangles that we added twice: remove them!
-		if(G->getEdge(new_move.e[0][0], new_move.e[1][0]) && H->getEdge(new_move.e[0][1], new_move.e[1][1]) ) { // Added nodes are connected, so they can be part of shared triangles
-			for(k = j+1; k < align->match_no; k++) {
-				if( (G->getEdge(new_move.e[0][0], align->left_match[k]) && H->getEdge(new_move.e[0][1], align->right_match[k])) &&
-					(G->getEdge(new_move.e[1][0], align->left_match[k]) && H->getEdge(new_move.e[1][1], align->right_match[k])) ) {
-					new_move.score --;
+		if(G->getEdge(new_mi[new_move.m_id[0]], new_mi[new_move.m_id[1]]) && H->getEdge(new_mj[new_move.m_id[0]], new_mj[new_move.m_id[1]])) { // Added (matching) nodes are connected (in the alignment graph), so they can be part of shared triangles
+			new_move.delta.edge --;
+			/*for(k = 0; k < align->match_no; k++) {
+				if((int)k == new_move.m_id[0] || (int)k == new_move.m_id[1])
+					continue;
+
+				if( (G->getEdge(new_mi[new_move.m_id[0]], align->left_match[k]) && H->getEdge(new_mj[new_move.m_id[0]], align->right_match[k])) ) {
+					if( (G->getEdge(new_mi[new_move.m_id[1]], align->left_match[k]) && H->getEdge(new_mj[new_move.m_id[1]], align->right_match[k])) ) {
+						new_move.delta.triangle --;
+					}
 				}
-			}
+			}*/
 		}
+/*		printf("\tStep 4 = %lf\n", new_move.new_move.delta.triangle);*/
+
+/*		printf("Actual edges = %ld, triangles = %ld\n", countEdgesUnderAlignment(new_mi, new_mj) - countEdgesUnderAlignment(align->left_match, align->right_match), countTrianglesUnderAlignment(new_mi, new_mj) - countTrianglesUnderAlignment(align->left_match, align->right_match));
+		printf("Estimated edges = %ld, triangle = %ld\n", new_move.delta.edge, new_move.delta.triangle);*/
 	}
 
-	printf("Score = %lf\n", new_move.score);
-	return new_move.score;
+
+
+/*	new_move.delta.score = ((double)new_move.delta.edge / align->conserved_edges) + ((double)new_move.delta.triangle / align->conserved_triangles) + (round(new_move.delta.seqsim) / align->total_seqSim);*/
+	alpha = 0.85;
+
+	new_move.delta.score = new_move.delta.edge; //alpha*round( align->match_no*(double)new_move.delta.triangle / align->conserved_triangles ) + (1-alpha)*round( align->match_no*new_move.delta.seqsim / align->total_seqSim );
+	return new_move.delta.score;
 }
 
 void ProdTensor::copyMove(Move &dst, Move& src) {
 	register unsigned int i;
+
+	memcpy(&(dst.delta), &(src.delta), sizeof(Delta));
 
 	dst.move_no = src.move_no;
 	for(i = 0; i < src.move_no; i++) {
@@ -996,7 +1288,7 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 
 		// Export binarized matrix X
 		timer.tic();
-		sprintf(x_path, "%s/%s_alpha=%.2e_beta=%.2e_it%d_X.smat", output_path, prefix, alpha, beta, i+1);
+		sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_it%d_X.smat", output_path, prefix, sparsity_type, alpha, i+1);
 		FILE *fd = fopen(x_path, "w");
 		fprintf(fd, "%d\t%d\t%d\n", this->n1, this->n2, myStats.num_matches);
 		for(j = 0; j < myStats.num_matches; j++) {
@@ -1037,9 +1329,21 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	printf("\t\t\tdt full export = %f\n", timer.toc());
 */
 
-	alignment* result = postprocess(best_x.memptr(), 1, 10);
+	alignment* result = postprocess(best_x.memptr(), 10, 200);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
+
+	timer.tic();
+	sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_X.smat", output_path, prefix, sparsity_type, alpha);
+	printf("Exporting final solution to %s ... ", x_path);
+	FILE *fd = fopen(x_path, "w");
+	fprintf(fd, "%d\t%d\t%d\n", this->n1, this->n2, (int)result->match_no);
+	for(j = 0; j < (unsigned int)result->match_no; j++) {
+		fprintf(fd, "%d\t%d\t1\n", result->left_match[j], result->right_match[j]);
+	}
+	fclose(fd);
+	printf("Done!\n");
+
 
 /*	// Export binarized matrix X
 	myStats = evalX(best_x.memptr()); // also sets mi, mj because it runs matching
@@ -1066,7 +1370,7 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 
 	long Tsum = 0;
 	for(i = 0; i < myStats.num_matches; i++) {
-		long curr_sum = DeltaT_removeMatch(MI, MJ, i);
+		long curr_sum = Delta_removeMatch(MI, MJ, i);
 		printf("%d- %ld\n", i, curr_sum);
 		Tsum += curr_sum;
 	}
@@ -1078,51 +1382,66 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 }
 
 
-long ProdTensor::DeltaT_removeMatch(vector<int> mi, vector<int> mj, unsigned int i) {
+Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int i) {
 	register unsigned int j, k;
 
-	long tri_count = 0;
+	Delta delta;
+	delta.triangle = 0;
+	delta.edge = 0;
 
 	for(j = 0; j < mi.size(); j++) {
 		if(i == j)
 			continue;
-		if(!G->getEdge(mi[i], mi[j]) || !H->getEdge(mj[i], mj[j]) )
+
+		if( !G->getEdge(mi[i], mi[j]) || !H->getEdge(mj[i], mj[j]) )
 			continue;
-		for(k = j+1; k < mi.size(); k++) {
+		else
+			delta.edge++;
+
+		/*for(k = j+1; k < mi.size(); k++) {
 			if(i == k)
 				continue;
-			if( (G->getEdge(mi[i], mi[k]) && H->getEdge(mj[i], mj[k])) &&
-				(G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
-				tri_count ++;
+			if( (G->getEdge(mi[i], mi[k]) && H->getEdge(mj[i], mj[k])) ) {
+				if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
+					delta.triangle ++;
+				}
 			}
-		}
+		}*/
 	}
 
-	return tri_count;
+	return delta;
 }
 
 
-long ProdTensor::DeltaT_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<int> e) {
+Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<int> e) {
 	register unsigned int j, k;
 
-	long tri_count = 0;
+
+	Delta delta;
+	delta.triangle = 0;
+	delta.edge = 0;
 
 	for(j = 0; j < mi.size(); j++) {
 		if(i == j)
 			continue;
-		if(!G->getEdge(e[0], mi[j]) || !H->getEdge(e[1], mj[j]) )
+
+		if( !G->getEdge(e[0], mi[j]) || !H->getEdge(e[1], mj[j]) )
 			continue;
-		for(k = j+1; k < mi.size(); k++) {
+		else
+			delta.edge++;
+
+		/*for(k = j+1; k < mi.size(); k++) {
 			if(i == k)
 				continue;
-			if( (G->getEdge(e[0], mi[k]) && H->getEdge(e[1], mj[k])) &&
-				(G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
-				tri_count ++;
+			if( (G->getEdge(e[0], mi[k]) && H->getEdge(e[1], mj[k])) ) {
+				if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
+					delta.triangle ++;
+				}
 			}
-		}
+		}*/
 	}
 
-	return tri_count;
+	return delta;
 }
 
 
@@ -1146,6 +1465,21 @@ long ProdTensor::countTrianglesUnderAlignment(vector<int> mi, vector<int> mj) {
 	}	
 	
 	return tri_count;
+}
+
+long ProdTensor::countEdgesUnderAlignment(vector<int> mi, vector<int> mj) {
+	register unsigned int i, j;
+
+	 long edge_count = 0;
+
+     for(i = 0; i < mi.size(); i++) {
+		for(j = i+1; j < mi.size(); j++) {
+			if(G->getEdge(mi[i], mi[j]) && H->getEdge(mj[i], mj[j]) )
+				edge_count++;
+		}
+	}
+
+	return edge_count;
 }
 
 int ProdTensor::InitX(double *x, int init_type, double *w) {
