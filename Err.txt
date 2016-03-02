@@ -1,8 +1,12 @@
-g++ -I./include -I./armadillo/include -g3 -march=native -O3 -funroll-loops -msse2  -Wall -Wno-write-strings -fopenmp   -c -o src/tensor.o src/tensor.cc
-src/tensor.cc: In member function ‘void ProdTensor::PrunePrefs(alignment*, double*)’:
-src/tensor.cc:855:25: warning: comparison between signed and unsigned integer expressions [-Wsign-compare]
-  for (i = 0; i < align->match_no; i++) {
-                         ^
-g++ -I./include -I./armadillo/include -g3 -march=native -O3 -funroll-loops -msse2  -Wall -Wno-write-strings -fopenmp  -o tri-match src/main.o src/graph.o src/io.o src/triangle.o src/tensor.o src/bMatch/mtxReader.o src/bMatch/bSuitor.o src/bMatch/bSuitorD.o src/bMatch/PG.o src/bMatch/localDom.o src/bMatch/PGDP.o src/bMatch/Node.cpp  -lblas -llapack 	
+g++ -I./include -I./armadillo/include -g3 -march=native -O4 -std=c++11 -fomit-frame-pointer -funroll-loops -fforce-addr -fexpensive-optimizations -msse2  -Wall -fopenmp   -c -o src/tensor.o src/tensor.cc
+src/tensor.cc: In member function ‘Delta ProdTensor::Delta_removeMatch(std::vector<int, std::allocator<int> >, std::vector<int, std::allocator<int> >, unsigned int)’:
+src/tensor.cc:1261:27: warning: unused variable ‘k’ [-Wunused-variable]
+  register unsigned int j, k;
+                           ^
+src/tensor.cc: In member function ‘Delta ProdTensor::Delta_addMatch(std::vector<int, std::allocator<int> >, std::vector<int, std::allocator<int> >, unsigned int, std::vector<int, std::allocator<int> >)’:
+src/tensor.cc:1292:27: warning: unused variable ‘k’ [-Wunused-variable]
+  register unsigned int j, k;
+                           ^
+g++ -I./include -I./armadillo/include -g3 -march=native -O4 -std=c++11 -fomit-frame-pointer -funroll-loops -fforce-addr -fexpensive-optimizations -msse2  -Wall -fopenmp  -o tri-match src/main.o src/graph.o src/io.o src/triangle.o src/tensor.o src/bMatch/mtxReader.o src/bMatch/bSuitor.o src/bMatch/bSuitorD.o src/bMatch/PG.o src/bMatch/localDom.o src/bMatch/PGDP.o src/bMatch/Node.cpp  -lblas -llapack 	
 echo "Executable: tri-match has been created"	
 Executable: tri-match has been created
