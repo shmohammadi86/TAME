@@ -1,12 +1,35 @@
 g++ -I./include -I./armadillo/include -g3 -march=native -O4 -std=c++11 -fomit-frame-pointer -funroll-loops -fforce-addr -fexpensive-optimizations -msse2  -Wall -fopenmp   -c -o src/tensor.o src/tensor.cc
-src/tensor.cc: In member function ‘Delta ProdTensor::Delta_removeMatch(std::vector<int, std::allocator<int> >, std::vector<int, std::allocator<int> >, unsigned int)’:
-src/tensor.cc:1261:27: warning: unused variable ‘k’ [-Wunused-variable]
-  register unsigned int j, k;
-                           ^
-src/tensor.cc: In member function ‘Delta ProdTensor::Delta_addMatch(std::vector<int, std::allocator<int> >, std::vector<int, std::allocator<int> >, unsigned int, std::vector<int, std::allocator<int> >)’:
-src/tensor.cc:1292:27: warning: unused variable ‘k’ [-Wunused-variable]
-  register unsigned int j, k;
-                           ^
+src/tensor.cc: In member function ‘alignment* ProdTensor::postprocess(double*, int, int, int, double)’:
+src/tensor.cc:691:228: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘long unsigned int’ [-Wformat=]
+  printf("%d edges == %d, %d trie == %d\n", align->conserved_edges, countEdgesUnderAlignment(align->left_match, align->right_match), countTrianglesUnderAlignment(align->left_match, align->right_match), align->conserved_triangles);
+                                                                                                                                                                                                                                    ^
+src/tensor.cc:691:228: warning: format ‘%d’ expects argument of type ‘int’, but argument 3 has type ‘long int’ [-Wformat=]
+src/tensor.cc:691:228: warning: format ‘%d’ expects argument of type ‘int’, but argument 4 has type ‘long int’ [-Wformat=]
+src/tensor.cc:691:228: warning: format ‘%d’ expects argument of type ‘int’, but argument 5 has type ‘long unsigned int’ [-Wformat=]
+src/tensor.cc:694:50: warning: format ‘%ld’ expects argument of type ‘long int’, but argument 2 has type ‘double’ [-Wformat=]
+  printf("\tInitial SeqSim = %ld\n", align->seqsim);
+                                                  ^
+src/tensor.cc:696:53: warning: format ‘%f’ expects argument of type ‘double’, but argument 2 has type ‘int’ [-Wformat=]
+  printf("\tInitial Ortho = %f\n", align->ortho_count);
+                                                     ^
+src/tensor.cc:883:229: warning: format ‘%d’ expects argument of type ‘int’, but argument 2 has type ‘long unsigned int’ [-Wformat=]
+   printf("%d edges == %d, %d trie == %d\n", align->conserved_edges, countEdgesUnderAlignment(align->left_match, align->right_match), countTrianglesUnderAlignment(align->left_match, align->right_match), align->conserved_triangles);
+                                                                                                                                                                                                                                     ^
+src/tensor.cc:883:229: warning: format ‘%d’ expects argument of type ‘int’, but argument 3 has type ‘long int’ [-Wformat=]
+src/tensor.cc:883:229: warning: format ‘%d’ expects argument of type ‘int’, but argument 4 has type ‘long int’ [-Wformat=]
+src/tensor.cc:883:229: warning: format ‘%d’ expects argument of type ‘int’, but argument 5 has type ‘long unsigned int’ [-Wformat=]
+src/tensor.cc:890:49: warning: format ‘%ld’ expects argument of type ‘long int’, but argument 2 has type ‘double’ [-Wformat=]
+    printf("\tDelta SeqSim = %ld\n", Delta_seqsim);
+                                                 ^
+src/tensor.cc:892:46: warning: format ‘%f’ expects argument of type ‘double’, but argument 2 has type ‘long int’ [-Wformat=]
+    printf("\tDelta Ortho = %f\n", Delta_ortho);
+                                              ^
+src/tensor.cc:896:50: warning: format ‘%ld’ expects argument of type ‘long int’, but argument 2 has type ‘double’ [-Wformat=]
+    printf("\tTotal SeqSim = %ld\n", align->seqsim);
+                                                  ^
+src/tensor.cc:898:53: warning: format ‘%f’ expects argument of type ‘double’, but argument 2 has type ‘int’ [-Wformat=]
+    printf("\tTotal Ortho = %f\n", align->ortho_count);
+                                                     ^
 g++ -I./include -I./armadillo/include -g3 -march=native -O4 -std=c++11 -fomit-frame-pointer -funroll-loops -fforce-addr -fexpensive-optimizations -msse2  -Wall -fopenmp  -o tri-match src/main.o src/graph.o src/io.o src/triangle.o src/tensor.o src/bMatch/mtxReader.o src/bMatch/bSuitor.o src/bMatch/bSuitorD.o src/bMatch/PG.o src/bMatch/localDom.o src/bMatch/PGDP.o src/bMatch/Node.cpp  -lblas -llapack 	
 echo "Executable: tri-match has been created"	
 Executable: tri-match has been created

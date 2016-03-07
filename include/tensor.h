@@ -4,6 +4,7 @@
 #include <triangle.h>
 #include <io.h>
 #include <algorithm>
+#include <math.h>
 
 #include "bMatching.h"
 #include "mtxReader.h"
@@ -49,8 +50,9 @@ struct alignment {
 	unsigned long int  match_no;
 	unsigned long int conserved_edges;
 	unsigned long int conserved_triangles;
-	double total_seqSim;
+	double seqsim;
 	int ortho_count;
+	double NSim;
 };
 
 struct Delta {
@@ -58,7 +60,8 @@ struct Delta {
 	long edge;
 	double seqsim;
 	int ortho_count;
-	double TriSim;
+	double NSim;
+	double connectedNess;
 
 	double score;
 };
@@ -119,7 +122,7 @@ private:
 	double 	evaluateMove(Move &new_move, alignment *align);
 	void copyMove(Move &dst, Move& src);
 	void applyMove(Move &best_move, alignment* align);
-
+	void computeMatchDeg(vector<int> mi, vector<int> mj);
 
 	TriangleCounts *T_G, *T_H;
 	Graph *G, *H; 
@@ -130,6 +133,8 @@ private:
 	unsigned int Round;
 	
 	vector<int> matched_mi, matched_mj;
+	vector<int> matching_deg;
+	vector<int> matching_TriDeg;
 
 	double nonzeros_estimate(vector<double> v);
 	double opt_tri_stat(double *x, double *mi, double *mj, vector<int> perm);
