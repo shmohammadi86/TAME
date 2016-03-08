@@ -53,6 +53,8 @@ struct alignment {
 	double seqsim;
 	int ortho_count;
 	double NSim;
+
+	double expected_tri, expected_NSim;
 };
 
 struct Delta {
@@ -119,10 +121,10 @@ private:
 	long countEdgesUnderAlignment(vector<int> mi, vector<int> mj);
 	Delta Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int i);
 	Delta Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i, vector<int> e);
-	double 	evaluateMove(Move &new_move, alignment *align);
+	double 	evaluateMove(Move &new_move, alignment *align, int cycle);
 	void copyMove(Move &dst, Move& src);
 	void applyMove(Move &best_move, alignment* align);
-	void computeMatchDeg(vector<int> mi, vector<int> mj);
+/*	void computeMatchDeg(vector<int> mi, vector<int> mj);*/
 
 	TriangleCounts *T_G, *T_H;
 	Graph *G, *H; 
@@ -133,8 +135,8 @@ private:
 	unsigned int Round;
 	
 	vector<int> matched_mi, matched_mj;
-	vector<int> matching_deg;
-	vector<int> matching_TriDeg;
+/*	vector<int> matching_deg;
+	vector<int> matching_TriDeg;*/
 
 	double nonzeros_estimate(vector<double> v);
 	double opt_tri_stat(double *x, double *mi, double *mj, vector<int> perm);
