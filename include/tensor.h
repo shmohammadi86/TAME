@@ -3,8 +3,10 @@
 #include <generics.h>
 #include <triangle.h>
 #include <io.h>
-#include <algorithm>
 #include <math.h>
+
+#include <algorithm>
+#include <vector>
 
 #include "bMatching.h"
 #include "mtxReader.h"
@@ -31,11 +33,6 @@ struct stats {
 	double correctness;
 };
 
-struct switchCandidate {
-	int vertex_id;
-};
-
-
 struct alignment {
 	vector<int> left_match; // left_match[e] is the vertex in G for the e^th match in the alignment
 	vector<int> right_match; // right_match[e] is the vertex in G for the e^th match in the alignment
@@ -43,8 +40,8 @@ struct alignment {
 	int *left_project; //  For every vertex i' in H, it holds the projection of i' into G. In otherwords, it is either a vertex id i in G, if i' is matched, or -1 if it is not matched
 	int *right_project; //  For every vertex i in G, it holds the projection of i into H. In otherwords, it is either a vertex id i' in H, if i is matched, or -1 if it is not matched
 
-	vector<switchCandidate> *PrefG; // For every vertex i' in H, PrefG[i'] is the set of potential matches for i' in G
-	vector<switchCandidate> *PrefH; // For every vertex i in G, PrefH[i] is the set of potential matches for i in H
+	vector<int> *PrefG; // For every vertex i' in H, PrefG[i'] is the set of potential matches for i' in G
+	vector<int> *PrefH; // For every vertex i in G, PrefH[i] is the set of potential matches for i in H
 
 
 	unsigned long int  match_no;
@@ -55,6 +52,8 @@ struct alignment {
 	double NSim;
 
 	double expected_tri, expected_NSim;
+	double expected_tri_avg, expected_NSim_avg;
+	double triWeight, NSimWeight;
 };
 
 struct Delta {
@@ -87,6 +86,8 @@ double normalize(double *v_norm, double *v, unsigned long n);
 double *initUniformX(long int n);
 double *initRandomX(long int n);
 	
+using namespace std;
+
 class ProdTensor {
 public:
 	ProdTensor(Graph *G, TriangleCounts* T_G, Graph *H, TriangleCounts* T_H, double *w, Sparsity_Type sparsity_flag, char *output_path, char *prefix);
