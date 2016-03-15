@@ -616,13 +616,14 @@ void ProdTensor::addPref(alignment* align, double *weights, int B) {
 alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, int seqDeg, double seqSim_threshold) {
 	printf("Post-processing ... \n");
 
-	register unsigned int i, i_prime, j, j_prime, k, l, s, it;
+	register unsigned int i, i_prime, j, j_prime, k, k_prime, l, s, it;
 	alignment *align = new alignment;
 
 
 	/*******************************************************
 	 *    Initialize alignment with MWM over TAME matrix
 	 *******************************************************/
+	printf("Setting initial alignment and add it to Pref sets");
 	pruned_w = new double[this->n];
 	memcpy(pruned_w, w_vec.memptr(), this->n*sizeof(double));
 	for(i = 0; i < this->n; i++) {
@@ -675,6 +676,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 		temp_x[align->left_match[i]*this->n2+align->right_match[i]] = 0;
 	}
+/*	computeMatchDeg(align->left_match, align->right_match);*/
+
 
 	align->conserved_edges = align->conserved_triangles = align->seqsim = align->ortho_count = align->NSim = 0;
 	for (l = 0; l < align->match_no; l++) {
@@ -688,22 +691,104 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	align->conserved_triangles = align->conserved_triangles / 3;
 	align->conserved_edges = align->conserved_edges / 2;
 
+	align->expected_tri = (double)align->conserved_triangles / align->match_no;
+	align->expected_NSim = (double)align->NSim / align->match_no;
+
+	align->expected_NSim_avg = align->expected_tri_avg = 0;
+
 	printf("\tInitial Edges = %ld\n", align->conserved_edges);
 	printf("\tInitial Triangles = %ld\n", align->conserved_triangles);
 	printf("\tInitial SeqSim = %f\n", align->seqsim);
 	printf("\tInitial NSim = %f\n", align->NSim);
 	printf("\tInitial Ortho = %d\n", align->ortho_count);
 
+
 	/****************************************
 	 *    Add Candidates to the Pref Sets
 	 ****************************************/
 	// Add (topoDeg-1)-matches from Topo
+	printf("Adding triangle forming pairs to Pref sets");
 	addPref(align, temp_x, topoDeg-1);
 
 	// Add seqDeg-matches from pruned seqSim
+	printf("Adding ortholog pairs to the Pref sets\n");
 	addPref(align, pruned_w, seqDeg);
 
+/*	// Add square forming candidates to the Pref sets
+	printf("Adding square forming pairs to the Pref sets\n");
+	for(k = 0; k < align->match_no; k++) {
+		i = align->left_match[k]; i_prime = align->right_match[k];
+		for(j = 0; j < G->n; j++) {
+			if(G->getEdge(i, j)) {
+				for(j_prime = 0; j_prime < H->n; j_prime++) {
+					if(H->getEdge(i_prime, j_prime)) {
+						for(l = 0; l < align->match_no; l++) {
+							if(align->left_match[l] == (int)j) {
+								cand.vertex_id = j_prime;
+								align->PrefH[l].push_back(cand);
+							}
+							if(align->right_match[l] == (int)j_prime) {
+								cand.vertex_id = j;
+								align->PrefG[l].push_back(cand);
+							}
+						}
+					}
+				}
+			}
+		}
+	}*/
 
+
+	// Add square forming candidates to the Pref sets
+	printf("Adding square forming pairs to the Pref sets\n");
+	for(s = 0; s < align->match_no; s++) {
+		i = align->left_match[s]; i_prime = align->right_match[s];
+		for(l = 0; l < align->match_no; l++) {
+			j = align->left_match[l]; j_prime = align->right_match[l];
+			if(G->getEdge(i, j)) {
+				for (k_prime = 0; k_prime < H->n; k_prime++) {
+					if(H->getEdge(i_prime, k_prime)) {
+						cand.vertex_id = k_prime;
+						align->PrefH[l].push_back(cand);
+					}
+				}
+			}
+			if(H->getEdge(i_prime, j_prime)) {
+				for (k = 0; k < G->n; k++) {
+					if(G->getEdge(i, k)) {
+						cand.vertex_id = k;
+						align->PrefG[l].push_back(cand);
+					}
+				}
+			}
+		}
+	}
+
+	vector<switchCandidate>::iterator last;
+	for(l = 0; l < align->match_no; l++) {
+		sort(align->PrefG[l]->begin(), align->PrefG[l]->end());
+		last = unqiue(align->PrefG[l]->begin(), align->PrefG[l]->end());
+		align->PrefG[l].erase(last, align->PrefG[l].end());
+
+		sort(align->PrefH[l]->begin(), align->PrefH[l]->end());
+		last = unqiue(align->PrefH[l]->begin(), align->PrefH[l]->end());
+		align->PrefH[l].erase(last, align->PrefH[l].end());
+	}
+
+
+	vector<int> G_PrefD, H_PrefD;
+	for (i = 0; i < align->match_no; i++) {
+		G_PrefD.push_back(align->PrefG[i].size());
+		H_PrefD.push_back(align->PrefH[i].size());
+	}
+	sort(G_PrefD.begin(), G_PrefD.end());
+	sort(H_PrefD.begin(), H_PrefD.end());
+
+
+	printf("AFTER BLAST::\n");
+	for (i = 0; i < align->match_no; i++) {
+		printf("G = %d, H = %d\n", G_PrefD[i], H_PrefD[i]);
+	}
 
 	/******************************************
 	 *   Process each candidate individually
@@ -733,7 +818,10 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	vector<int> right_unmatched, left_unmatched, matched_candidates;
 
 
+	int curr_cycle = 0;
 	for(it = 0; it < (unsigned int)max_iter; it++) {
+		curr_cycle = it  % 2;
+
 		printf("Iteration %d \n", it);
 		total_improvement = 0;
 		Delta_tri = Delta_edge = Delta_seqsim = Delta_NSim = Delta_ortho = 0;
@@ -766,6 +854,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		 *   Process each match in the given order
 		*********************************************/
 		for(unsigned int d = 0; d < align->match_no; d++) {
+
 			k = match_degree[d].match_id;
 			best_move.move_no = 0;
 			bzero(&(best_move.delta), sizeof(Delta));
@@ -796,7 +885,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 				new_move.e[0][0] = j;
 
 				//printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
-				evaluateMove(new_move, align);
+				evaluateMove(new_move, align, curr_cycle);
 				if(best_move.delta.score < new_move.delta.score ) {
 					copyMove(best_move, new_move);
 				}
@@ -808,7 +897,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 				new_move.e[0][1] = j_prime;
 
 				//printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
-				evaluateMove(new_move, align);
+				evaluateMove(new_move, align, curr_cycle);
 				if(best_move.delta.score < new_move.delta.score ) {
 					copyMove(best_move, new_move);
 				}
@@ -851,13 +940,14 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 				// Prune based on edges
 
 				//printf("Swap %d <-> %d and %d <-> %d with %d <-> %d and %d <-> %d\n", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
-				evaluateMove(new_move, align);
+				evaluateMove(new_move, align, curr_cycle);
 				if(best_move.delta.score < new_move.delta.score ) {
 					copyMove(best_move, new_move);
 				}
 			}
 			if(0 < best_move.delta.score) {
 				applyMove(best_move, align);
+/*				computeMatchDeg(align->left_match, align->right_match);*/
 				total_improvement += best_move.delta.score;
 				Delta_edge += best_move.delta.edge;
 				Delta_tri += best_move.delta.triangle;
@@ -880,6 +970,31 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		align->conserved_triangles = align->conserved_triangles / 3;
 		align->conserved_edges = align->conserved_edges / 2;
 
+		align->expected_tri = fabs((double)Delta_tri) / align->match_no;
+		align->expected_NSim = fabs((double)Delta_NSim) / align->match_no;
+
+
+/*
+		align->expected_tri_avg = (it*align->expected_tri_avg + align->expected_tri) / (it+1);
+		align->expected_NSim_avg = (it*align->expected_NSim_avg + align->expected_NSim) / (it+1);
+
+*/
+
+		align->expected_tri_avg = pow(pow(align->expected_tri_avg, it)*align->expected_tri, 1.0/(it+1));
+		align->expected_NSim_avg = pow(pow(align->expected_NSim_avg, it)*align->expected_NSim, 1.0/(it+1));
+
+
+		printf("Tri: Exp=%f, Exp_Avg = %f\tNSim: Exp = %f, Exp_Avg = %f\n", align->expected_tri, align->expected_tri_avg, align->expected_NSim, align->expected_NSim_avg);
+
+		char x_path[1024];
+		sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_beta=%.2e_X_postIT=%d.smat", output_path, prefix, sparsity_type, alpha, beta, it);
+		printf("Exporting current alignment to %s ... ", x_path);
+		FILE *fd = fopen(x_path, "w");
+		fprintf(fd, "%d\t%d\t%d\n", this->n1, this->n2, (int)align->match_no);
+		for(j = 0; j < (unsigned int)align->match_no; j++) {
+			fprintf(fd, "%d\t%d\t1\n", align->left_match[j], align->right_match[j]);
+		}
+		fclose(fd);
 
 		if(0 < total_improvement) {
 			printf("Total improvement = %lf\n", total_improvement);
@@ -902,11 +1017,14 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 	}
 
+
+
+
 	return align;
 }
 
 
-double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
+double ProdTensor::evaluateMove(Move &new_move, alignment* align, int cycle) {
 /*	int i = align->left_match[new_move.m_id[0]];
 	int j = align->left_match[new_move.m_id[1]];
 	int i_prime = align->right_match[new_move.m_id[0]];
@@ -957,10 +1075,12 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 
 
 
+/*
 		// 1) triangles that we removed twice: add them back in!
-		int common_neighbors = 0;
 		unsigned register int i = new_move.m_id[0], j = new_move.m_id[1];
 		if(G->getEdge(align->left_match[i], align->left_match[j]) && H->getEdge(align->right_match[i], align->right_match[j]) ) { // Removed (alignment) nodes were connected, so they could have been part of shared triangles
+			printf("Remove: %d %d %d %d\n", align->left_match[i], align->left_match[j], align->right_match[i], align->right_match[j]);
+
 			new_move.delta.edge ++;
 			double counter = 0;
 
@@ -976,14 +1096,15 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 					if ((G->getEdge(align->left_match[j], align->left_match[k]) && H->getEdge(align->right_match[j], align->right_match[k])) ) {
 						new_move.delta.triangle ++;
 						counter -= (1+pruned_w[this->n2 * align->left_match[k] + align->right_match[k]]);///(G->getVertexDegree(align->left_match[k])*H->getVertexDegree(align->right_match[k]));
-/*						printf("k = %d, w = %f, D1 = %d, D2 = %d, counter = %f\n", k, pruned_w[this->n2 * align->left_match[k] + align->right_match[k]], G->getVertexDegree(align->left_match[k]), H->getVertexDegree(align->right_match[k]), counter);*/
+						printf("\tk = %d\t\t w = %f, D1 = %d, D2 = %d, counter = %f\n", k, pruned_w[this->n2 * align->left_match[k] + align->right_match[k]], G->getVertexDegree(align->left_match[k]), H->getVertexDegree(align->right_match[k]), counter);
 					}
 				}
 			}
-			new_move.delta.connectedNess += counter;// * pruned_w[this->n2 * align->left_match[i] + align->right_match[i]] * pruned_w[this->n2 * align->left_match[j] + align->right_match[j]];
+//			new_move.delta.connectedNess += counter;// * pruned_w[this->n2 * align->left_match[i] + align->right_match[i]] * pruned_w[this->n2 * align->left_match[j] + align->right_match[j]];
 		}
-/*		printf("\tStep 2 = %lf\n", new_move.new_move.delta.triangle);*/
+		printf("\tStep 2 = %lf\n", new_move.new_move.delta.triangle);
 
+*/
 
 
 
@@ -1004,8 +1125,9 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 
 
 
-		// 2) triangles that we added twice: remove them!
+/*		// 2) triangles that we added twice: remove them!
 		if(G->getEdge(new_mi[new_move.m_id[0]], new_mi[new_move.m_id[1]]) && H->getEdge(new_mj[new_move.m_id[0]], new_mj[new_move.m_id[1]])) { // Added (matching) nodes are connected (in the alignment graph), so they can be part of shared triangles
+			printf("Add: %d, %d, %d, %d\n",new_mi[new_move.m_id[0]], new_mi[new_move.m_id[1]], new_mj[new_move.m_id[0]], new_mj[new_move.m_id[1]]);
 			new_move.delta.edge --;
 
 			double counter = 0;
@@ -1022,12 +1144,12 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 					if( (G->getEdge(new_mi[new_move.m_id[1]], align->left_match[k]) && H->getEdge(new_mj[new_move.m_id[1]], align->right_match[k])) ) {
 						new_move.delta.triangle --;
 						 counter += (1+pruned_w[this->n2 * align->left_match[k] + align->right_match[k]]);///(G->getVertexDegree(align->left_match[k])*H->getVertexDegree(align->right_match[k]));
-/* 						 printf("k = %d, w = %f, D1 = %d, D2 = %d, counter = %f\n", k, pruned_w[this->n2 * align->left_match[k] + align->right_match[k]], G->getVertexDegree(align->left_match[k]), H->getVertexDegree(align->right_match[k]), counter);*/
+ 						 printf("\tk = %d\t\t w = %f, D1 = %d, D2 = %d, counter = %f\n", k, pruned_w[this->n2 * align->left_match[k] + align->right_match[k]], G->getVertexDegree(align->left_match[k]), H->getVertexDegree(align->right_match[k]), counter);
 					}
 				}
 			}
 			new_move.delta.connectedNess += counter;// * pruned_w[this->n2 * new_mi[new_move.m_id[0]] + new_mj[new_move.m_id[0]]] * pruned_w[this->n2 * new_mi[new_move.m_id[1]] + new_mj[new_move.m_id[1]]];
-		}
+		}*/
 
 
 
@@ -1043,7 +1165,6 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 
 
 /*	new_move.delta.score = ((double)new_move.delta.edge / align->conserved_edges) + ((double)new_move.delta.triangle / align->conserved_triangles) + (round(new_move.delta.seqsim) / align->seqsim);*/
-	alpha = 0;
 
 /*	new_move.delta.score = new_move.delta.triangle; //alpha*round( align->match_no*(double)new_move.delta.triangle / align->conserved_triangles ) + (1-alpha)*round( align->match_no*new_move.delta.seqsim / align->seqsim );*/
 
@@ -1068,8 +1189,21 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align) {
 /*	new_move.delta.score = alpha*round( (double)align->match_no*new_move.delta.triangle / align->conserved_triangles) + (1-alpha)*round( (double)align->match_no*new_move.delta.connectedNess / align->connectedNess );*/
 
 
-	new_move.delta.score = new_move.delta.connectedNess;
+/*	new_move.delta.score = round(new_move.delta.NSim);*/
 
+/*	new_move.delta.score = alpha*round( (double)align->match_no*new_move.delta.triangle / align->conserved_triangles  + (double)align->match_no*new_move.delta.edge / align->conserved_edges) + (1-alpha)*round( (double)align->match_no*new_move.delta.NSim / align->NSim );*/
+
+	/*switch(cycle) {
+		case 0:
+			new_move.delta.score = new_move.delta.triangle;
+			break;
+		case 1:
+			new_move.delta.score = new_move.delta.NSim;
+			break;
+	}
+	 */
+	new_move.delta.score = alpha*(new_move.delta.triangle / align->expected_tri_avg) + (1-alpha)*( new_move.delta.NSim / align->expected_NSim_avg );
+/*	printf("Tri = %ld, norm Tri = %f, NSim = %f, Norm NSim = %f, score = %f\n", new_move.delta.triangle, (new_move.delta.triangle / align->expected_tri), new_move.delta.NSim, new_move.delta.NSim / align->expected_NSim, new_move.delta.score);*/
 	return new_move.delta.score;
 }
 
@@ -1095,7 +1229,7 @@ void ProdTensor::applyMove(Move &best_move, alignment* align) {
 	}
 }
 
-eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, double epsilon, double *w, double *x0, int init_type) {
+eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, double epsilon, double *w, double *x0, int init_type) {
 	
 	register unsigned int i, j;
 	char x_path[1024];
@@ -1112,9 +1246,10 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	this->res->flag = -2;
 
 	// Misuse of notation in the paper. Let's change the order to avoid confusion
-	this->alpha = shift_param;
+	this->alpha = weight_param;
+	this->beta = shift_param;
 
-	printf("ISS-HOPM::Max Iter = %d, Alpha (shift) = %e, Beta (weight) = %e, Epsilon = %e\n", max_it, this->alpha, this->beta, epsilon); 	fflush(stdout);
+	printf("ISS-HOPM::Max Iter = %d, Alpha (weight) = %e, Beta (shift) = %e, Epsilon = %e\n", max_it, this->alpha, this->beta, epsilon); 	fflush(stdout);
 
 
 	stats myStats, bestStats; bestStats.T = bestStats.M = -1;
@@ -1144,7 +1279,7 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 		printf("\t\t\tShifting now:\n");
 		//Shift(x_hat_vec.memptr(), x_vec.memptr(), w, alpha, beta, shift_type);
 		//Shift(shift_type);
-		x_hat_vec += this->alpha*x_vec;			
+		x_hat_vec += this->beta*x_vec;
 		printf("\t\t\tdt Shift = %f (norm x_hat_vec = %e)\n", timer.toc(), arma::norm(x_hat_vec));
 
 
@@ -1212,7 +1347,7 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 
 		// Export binarized matrix X
 		timer.tic();
-		sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_it%d_X.smat", output_path, prefix, sparsity_type, alpha, i+1);
+		sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_beta=%.2e_it%d_X.smat", output_path, prefix, sparsity_type, alpha, beta, i+1);
 		FILE *fd = fopen(x_path, "w");
 		fprintf(fd, "%d\t%d\t%d\n", this->n1, this->n2, myStats.num_matches);
 		for(j = 0; j < myStats.num_matches; j++) {
@@ -1253,12 +1388,12 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	printf("\t\t\tdt full export = %f\n", timer.toc());
 */
 
-	alignment* result = postprocess(best_x.memptr(), 10, 200, 50, 0);
+	alignment* result = postprocess(best_x.memptr(), 20, 200, 50, 0);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
 
 	timer.tic();
-	sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_X.smat", output_path, prefix, sparsity_type, alpha);
+	sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_beta=%.2e_X.smat", output_path, prefix, sparsity_type, alpha, beta);
 	printf("Exporting final solution to %s ... ", x_path);
 	FILE *fd = fopen(x_path, "w");
 	fprintf(fd, "%d\t%d\t%d\n", this->n1, this->n2, (int)result->match_no);
@@ -1305,6 +1440,37 @@ eigen *ProdTensor::issHOPM(int max_it, double shift_param, double weight_param, 
 	return res;
 }
 
+/*void ProdTensor::computeMatchDeg(vector<int> mi, vector<int> mj) {
+	register unsigned int i, j, k;
+	this->matching_deg.clear();
+	this->matching_deg.resize(mi.size());
+
+	this->matching_TriDeg.clear();
+	this->matching_TriDeg.resize(mi.size());
+
+	for(i = 0; i < mi.size(); i++) {
+
+		for(j = 0; j < mi.size(); j++) {
+			if(i == j) continue;
+			if( !G->getEdge(mi[i], mi[j]) || !H->getEdge(mj[i], mj[j]) )
+				continue;
+			else {
+				printf("Square:: i = %d, j = %d\n", i, j);
+				this->matching_deg[i] ++;
+			}
+
+			for(k = j+1; k < mi.size(); k++) {
+				if(i == k)
+					continue;
+				if( (G->getEdge(mi[i], mi[k]) && H->getEdge(mj[i], mj[k])) ) {
+					if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
+						matching_TriDeg[i]++;
+					}
+				}
+			}
+		}
+	}
+}*/
 
 Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int i) {
 	register unsigned int j, k;
@@ -1317,6 +1483,8 @@ Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int
 	delta.ortho_count = delta.seqsim > 0? 1:0;
 	delta.NSim = delta.seqsim;
 
+	double counter = 0;
+	long TriDeg_counter;
 	for(j = 0; j < mi.size(); j++) {
 		if(i == j)
 			continue;
@@ -1325,21 +1493,44 @@ Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int
 			continue;
 		else {
 			delta.edge++;
-			delta.NSim += pruned_w[this->n2*mi[j] + mj[j]];
 			delta.ortho_count += pruned_w[this->n2*mi[j] + mj[j]] > 0? 1:0;
-		}
 
-		for(k = j+1; k < mi.size(); k++) {
-			if(i == k)
-				continue;
-			if( (G->getEdge(mi[i], mi[k]) && H->getEdge(mj[i], mj[k])) ) {
-				if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
-					delta.triangle ++;
+			counter += pruned_w[this->n2*mi[j] + mj[j]] / (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[j]));
+/*			printf("\tWeight = %f, D_G = %d, D_H = %d\n", pruned_w[this->n2*mi[j] + mj[j]], G->getVertexDegree(mi[j]),  H->getVertexDegree(mj[j]));*/
+/*
+			int DD = 1;
+			for(k = 0; k < mi.size(); k++) {
+				if(k == j || k == i)
+					continue;
+				if( G->getEdge(mi[k], mi[j]) && H->getEdge(mj[k], mj[j]) )
+					DD ++;
+			}
+			delta.NSim += ( pruned_w[this->n2*mi[j] + mj[j]] / DD );
+*/
+
+
+			TriDeg_counter  = 0;
+			for(k = j+1; k < mi.size(); k++) {
+				if(i == k)
+					continue;
+				if( (G->getEdge(mi[i], mi[k]) && H->getEdge(mj[i], mj[k])) ) {
+					if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
+						delta.triangle ++;
+						TriDeg_counter ++;
+					}
 				}
 			}
 		}
+
+/*		printf("Add::\n\t weight = %f, Matching deg = %d\n", pruned_w[this->n2*mi[j] + mj[j]], this->matching_deg[j]);*/
 	}
 
+/*	printf("\t\tNSIm:: Before = %f, degree = %d, baseline = %f\n", delta.NSim, delta.edge, delta.seqsim);*/
+
+/*	delta.NSim = 0.1*(delta.NSim / (delta.edge > 0? delta.edge:1)) + delta.seqsim;*/
+
+/*	printf("SeqSim = %f, NSim Counter = %f\n", delta.NSim, counter);*/
+	delta.NSim += counter;
 	return delta;
 }
 
@@ -1355,7 +1546,9 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 	delta.seqsim = pruned_w[this->n2*e[0] + e[1]];
 	delta.ortho_count = delta.seqsim > 0? 1:0;
 	delta.NSim = delta.seqsim;
+	double counter = 0;
 
+	long TriDeg_counter;
 	for(j = 0; j < mi.size(); j++) {
 		if(i == j)
 			continue;
@@ -1364,20 +1557,42 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 			continue;
 		else {
 			delta.edge++;
-			delta.NSim += pruned_w[this->n2*mi[j] + mj[j]];
 			delta.ortho_count += pruned_w[this->n2*mi[j] + mj[j]] > 0? 1:0;
-		}
 
-		for(k = j+1; k < mi.size(); k++) {
-			if(i == k)
-				continue;
-			if( (G->getEdge(e[0], mi[k]) && H->getEdge(e[1], mj[k])) ) {
-				if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
-					delta.triangle ++;
+			counter += pruned_w[this->n2*mi[j] + mj[j]] / (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[j]));
+/*			printf("\tWeight = %f, D_G = %d, D_H = %d\n", pruned_w[this->n2*mi[j] + mj[j]], G->getVertexDegree(mi[j]),  H->getVertexDegree(mj[j]));*/
+/*
+			int DD = 1;
+			for(k = 0; k < mi.size(); k++) {
+				if(k == j || k == i)
+					continue;
+				if( G->getEdge(mi[k], mi[j]) && H->getEdge(mj[k], mj[j]) )
+					DD ++;
+			}
+			delta.NSim += ( pruned_w[this->n2*mi[j] + mj[j]] / DD );
+*/
+
+			TriDeg_counter  = 0;
+			for(k = j+1; k < mi.size(); k++) {
+				if(i == k)
+					continue;
+				if( (G->getEdge(e[0], mi[k]) && H->getEdge(e[1], mj[k])) ) {
+					if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
+						delta.triangle ++;
+						TriDeg_counter ++;
+					}
 				}
 			}
 		}
+/*		printf("Add::\n\t weight = %f, Matching deg = %d\n", pruned_w[this->n2*mi[j] + mj[j]], this->matching_deg[j]);*/
 	}
+/*	printf("\t\tNSIm:: Before = %f, degree = %d, baseline = %f\n", delta.NSim, delta.edge, delta.seqsim);*/
+
+/*	delta.NSim = 0.1*(delta.NSim / (delta.edge > 0? delta.edge:1)) + delta.seqsim;*/
+
+/*	printf("SeqSim = %f, NSim Counter = %f\n", delta.NSim, counter);*/
+	delta.NSim += counter;
+
 
 	return delta;
 }

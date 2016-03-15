@@ -1,4 +1,5 @@
 #include <tensor.h>
+#include <algorithm>
 //#define VERBOSE_DEBUG
 
 extern char *InitType_names[];
@@ -554,29 +555,18 @@ void ProdTensor::addPref(alignment* align, double *weights, int B) {
 	/***********************************
 	 *    Add bMatches to the Pref Sets
 	 ***********************************/
-	switchCandidate cand;
-
 	printf("\tAdding bMatches to H preferred set\n"); fflush(stdout);
 	for (i = 0; i < this->n1; i++) {
-/*		printf("\t\t%s:\n", this->G->getVertexName(i));*/
 		for(j = 0; j < (unsigned int) S[i].curSize; j++) {
-			cand.vertex_id = (S[i].heap[j].id) - this->n1;
-/*			printf("\t\t\t-> %s\n", this->H->getVertexName(cand.vertex_id));*/
-
-			align->PrefH[i].push_back( cand );
+			align->PrefH[i].push_back( (S[i].heap[j].id) - this->n1 );
 		}
 	}
 
 
 	printf("\tAdding bMatches to G preferred set\n"); fflush(stdout);
 	for (i = 0; i < this->n2; i++) {
-/*		printf("\t\t%s:\n", this->H->getVertexName(i));*/
-
 		for(j = 0; j < (unsigned int) S[i+this->n1].curSize; j++) {
-			cand.vertex_id = S[i+this->n1].heap[j].id;
-/*			printf("\t\t\t-> %s\n", this->G->getVertexName(cand.vertex_id));*/
-
-			align->PrefG[i].push_back( cand );
+			align->PrefG[i].push_back( S[i+this->n1].heap[j].id );
 		}
 	}
 
@@ -616,13 +606,14 @@ void ProdTensor::addPref(alignment* align, double *weights, int B) {
 alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, int seqDeg, double seqSim_threshold) {
 	printf("Post-processing ... \n");
 
-	register unsigned int i, i_prime, j, j_prime, k, l, s, it;
+	register unsigned int i, i_prime, j, j_prime, k, k_prime, l, s, it;
 	alignment *align = new alignment;
 
 
 	/*******************************************************
 	 *    Initialize alignment with MWM over TAME matrix
 	 *******************************************************/
+	printf("\tSetting initial alignment and add it to Pref sets\n"); fflush(stdout);
 	pruned_w = new double[this->n];
 	memcpy(pruned_w, w_vec.memptr(), this->n*sizeof(double));
 	for(i = 0; i < this->n; i++) {
@@ -642,19 +633,18 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	align->left_match.resize(align->match_no);
 	align->right_match.resize(align->match_no);
 
-	align->PrefH = new vector<switchCandidate>[this->n1];
+	align->PrefH = new vector<int>[this->n1];
 	align->right_project = new int[this->n1];
 	for(i = 0; i < this->n1; i++) {
 		align->right_project[i] = -1;
 	}
 
-	align->PrefG = new vector<switchCandidate>[this->n2];
+	align->PrefG = new vector<int>[this->n2];
 	align->left_project = new int[this->n2];
 	for(i = 0; i < this->n2; i++) {
 		align->left_project[i] = -1;
 	}
 
-	switchCandidate cand;
 	Delta node_delta;
 
 	for (i = 0; i < align->match_no; i++) {
@@ -662,12 +652,10 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		align->right_match[i] = (int)mj[i];
 
 
-		cand.vertex_id = align->left_match[i];
-		align->PrefG[align->right_match[i]].push_back(cand);
+		align->PrefG[align->right_match[i]].push_back(align->left_match[i]);
 
 
-		cand.vertex_id = align->right_match[i];
-		align->PrefH[align->left_match[i]].push_back(cand);
+		align->PrefH[align->left_match[i]].push_back(align->right_match[i]);
 
 
 		align->left_project[align->right_match[i]] = align->left_match[i];
@@ -693,6 +681,9 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	align->expected_tri = (double)align->conserved_triangles / align->match_no;
 	align->expected_NSim = (double)align->NSim / align->match_no;
 
+	align->expected_tri_avg = align->expected_tri;
+	align->expected_NSim_avg = align->expected_NSim;
+
 	printf("\tInitial Edges = %ld\n", align->conserved_edges);
 	printf("\tInitial Triangles = %ld\n", align->conserved_triangles);
 	printf("\tInitial SeqSim = %f\n", align->seqsim);
@@ -704,12 +695,64 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	 *    Add Candidates to the Pref Sets
 	 ****************************************/
 	// Add (topoDeg-1)-matches from Topo
+	printf("\tAdding triangle forming pairs to Pref sets");
 	addPref(align, temp_x, topoDeg-1);
 
 	// Add seqDeg-matches from pruned seqSim
+	printf("\tAdding ortholog pairs to the Pref sets\n");
 	addPref(align, pruned_w, seqDeg);
 
 
+/*
+	// Add square forming candidates to the Pref sets
+	printf("\tAdding square forming pairs to the Pref sets\n");
+	for(s = 0; s < align->match_no; s++) {
+		i = align->left_match[s]; i_prime = align->right_match[s];
+		for(l = 0; l < align->match_no; l++) {
+			j = align->left_match[l]; j_prime = align->right_match[l];
+			if(G->getEdge(i, j)) {
+				for (k_prime = 0; k_prime < H->n; k_prime++) {
+					if(H->getEdge(i_prime, k_prime) && align->left_project[k_prime] == -1) {
+						align->PrefH[l].push_back(k_prime);
+					}
+				}
+			}
+			if(H->getEdge(i_prime, j_prime)) {
+				for (k = 0; k < G->n; k++) {
+					if(G->getEdge(i, k) && align->right_project[k] == -1) {
+						align->PrefG[l].push_back(k);
+					}
+				}
+			}
+		}
+	}
+*/
+
+	vector<int>::iterator last;
+	for(l = 0; l < align->match_no; l++) {
+		sort(align->PrefG[l].begin(), align->PrefG[l].end());
+		last = unique(align->PrefG[l].begin(), align->PrefG[l].end());
+		align->PrefG[l].erase(last, align->PrefG[l].end());
+
+		sort(align->PrefH[l].begin(), align->PrefH[l].end());
+		last = unique(align->PrefH[l].begin(), align->PrefH[l].end());
+		align->PrefH[l].erase(last, align->PrefH[l].end());
+	}
+
+
+/*	vector<int> G_PrefD, H_PrefD;
+	for (i = 0; i < align->match_no; i++) {
+		G_PrefD.push_back(align->PrefG[i].size());
+		H_PrefD.push_back(align->PrefH[i].size());
+	}
+	sort(G_PrefD.begin(), G_PrefD.end());
+	sort(H_PrefD.begin(), H_PrefD.end());
+
+
+	printf("AFTER ALL::\n");
+	for (i = 0; i < align->match_no; i++) {
+		printf("G = %d, H = %d\n", G_PrefD[i], H_PrefD[i]);
+	}*/
 
 	/******************************************
 	 *   Process each candidate individually
@@ -747,6 +790,10 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		total_improvement = 0;
 		Delta_tri = Delta_edge = Delta_seqsim = Delta_NSim = Delta_ortho = 0;
 
+		align->edgeWeight = alpha / (double)align->expected_edge_avg;
+		align->triWeight = alpha / (double)align->expected_tri_avg;
+		align->NSimWeight = (1-alpha) / align->expected_NSim_avg;
+
 		/*********************************************
 		 *   Decide in which order to process matches
 		*********************************************/
@@ -783,7 +830,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 			left_unmatched.clear(); // Nodes on the left side (G) that are in Pref set of i' and are either matched/unmatched
  			for(l = 0; l < align->PrefG[i_prime].size(); l++) {
-				j = align->PrefG[i_prime][l].vertex_id;
+				j = align->PrefG[i_prime][l];
 				if(align->right_project[j] == -1) {
 					left_unmatched.push_back(j);
 				}
@@ -791,7 +838,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 			right_unmatched.clear();
 			for(l = 0; l < align->PrefH[i].size(); l++) {
-				j_prime = align->PrefH[i][l].vertex_id;
+				j_prime = align->PrefH[i][l];
 				if(align->left_project[j_prime] == -1) {
 					right_unmatched.push_back(j_prime);
 				}
@@ -842,7 +889,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 				// Prune based on preferred sets
 				// 1) Make sure j' \in PrefH(i)
 				for(s = 0; s < align->PrefH[i].size(); s++) {
-					if(align->PrefH[i][s].vertex_id == (int)j_prime)
+					if(align->PrefH[i][s] == (int)j_prime)
 						break;
 				}
 				if(s == align->PrefH[i].size())
@@ -850,7 +897,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 				// 1) Make sure j \in PrefG(i')
 				for(s = 0; s < align->PrefG[i_prime].size(); s++) {
-					if(align->PrefG[i_prime][s].vertex_id == (int)j)
+					if(align->PrefG[i_prime][s] == (int)j)
 						break;
 				}
 				if(s == align->PrefG[i].size())
@@ -891,9 +938,23 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		align->conserved_triangles = align->conserved_triangles / 3;
 		align->conserved_edges = align->conserved_edges / 2;
 
-		align->expected_tri = fabs((double)Delta_tri) / align->match_no;
-		align->expected_NSim = fabs((double)Delta_NSim) / align->match_no;
+		if(fabs(Delta_tri) > 0 && fabs(Delta_NSim) > 0) {
+			align->expected_tri = fabs((double)Delta_tri) / align->match_no;
+			align->expected_NSim = fabs((double)Delta_NSim) / align->match_no;
+		}
 
+
+/*
+		align->expected_tri_avg = (it*align->expected_tri_avg + align->expected_tri) / (it+1);
+		align->expected_NSim_avg = (it*align->expected_NSim_avg + align->expected_NSim) / (it+1);
+
+*/
+
+		align->expected_tri_avg = pow(pow(align->expected_tri_avg, it)*align->expected_tri, 1.0/(it+1));
+		align->expected_NSim_avg = pow(pow(align->expected_NSim_avg, it)*align->expected_NSim, 1.0/(it+1));
+
+
+		printf("Tri: Exp=%f, Exp_Avg = %f\tNSim: Exp = %f, Exp_Avg = %f\n", align->expected_tri, align->expected_tri_avg, align->expected_NSim, align->expected_NSim_avg);
 
 		char x_path[1024];
 		sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_beta=%.2e_X_postIT=%d.smat", output_path, prefix, sparsity_type, alpha, beta, it);
@@ -1111,8 +1172,14 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align, int cycle) {
 			break;
 	}
 	 */
-	new_move.delta.score = alpha*(new_move.delta.triangle / align->expected_tri) + (1-alpha)*( new_move.delta.NSim / align->expected_NSim );
-/*	printf("Tri = %ld, norm Tri = %f, NSim = %f, Norm NSim = %f, score = %f\n", new_move.delta.triangle, (new_move.delta.triangle / align->expected_tri), new_move.delta.NSim, new_move.delta.NSim / align->expected_NSim, new_move.delta.score);*/
+
+/*	new_move.delta.score = alpha*(new_move.delta.triangle / align->expected_tri) + (1-alpha)*( new_move.delta.NSim / align->expected_NSim );*/
+
+/*	new_move.delta.score = alpha*(new_move.delta.triangle / (double)align->conserved_triangles) + (1-alpha)*( new_move.delta.NSim / align->NSim );*/
+
+	new_move.delta.score = align->triWeight*new_move.delta.triangle + align->NSimWeight*new_move.delta.NSim;
+
+
 	return new_move.delta.score;
 }
 
@@ -1288,16 +1355,16 @@ eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, 
 	/**********************************************
 	 * 			Clean output
 	 * *******************************************/	 
-	// Export full matrix X
-/*
+	// Export full matrix X, only it is not a post-processing only run
 	timer.tic();
-	X = (reshape(best_x, n2, n1)).t();
-	sprintf(x_path, "%s/%s_alpha=%.2e_beta=%.2e_X.mat", output_path, prefix, alpha, beta);
-	X.save(x_path, raw_ascii);
-	printf("\t\t\tdt full export = %f\n", timer.toc());
-*/
+	if (0 < max_it) {
+		X = (reshape(best_x, n2, n1)).t();
+		sprintf(x_path, "%s/%s_alpha=%.2e_beta=%.2e_X.mat", output_path, prefix, alpha, beta);
+		X.save(x_path, raw_ascii);
+		printf("\t\t\tdt full export = %f\n", timer.toc());
+	}
 
-	alignment* result = postprocess(best_x.memptr(), 10, 200, 50, 0);
+	alignment* result = postprocess(best_x.memptr(), 20, 200, 50, 0);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
 
