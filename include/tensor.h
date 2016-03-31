@@ -51,9 +51,9 @@ struct alignment {
 	int ortho_count;
 	double NSim;
 
-	double expected_tri, expected_NSim;
-	double expected_tri_avg, expected_NSim_avg;
-	double triWeight, NSimWeight;
+	double expected_edge, expected_tri, expected_NSim, expected_SeqSim;
+	double expected_edge_avg, expected_tri_avg, expected_NSim_avg, expected_SeqSim_avg;
+	double edgeWeight, triWeight, NSimWeight;
 };
 
 struct Delta {
@@ -65,6 +65,7 @@ struct Delta {
 	double connectedNess;
 
 	double score;
+	double tri_weight;
 };
 
 struct Move { // Encodes even-sized augmenting paths

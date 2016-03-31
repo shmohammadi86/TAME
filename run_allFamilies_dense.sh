@@ -14,11 +14,28 @@ for instance_id in {1..10}; do
 	SeqSim=$INPUT_PATH/$instance/A-B.smat
 
 	rm output/*
-	./tri-match -t smat -H $H_net -G $G_net -S $SeqSim -Y 0 -b 1 -a 0.1 --iter 3 -x seqsim
+	./tri-match -t smat -H $H_net -G $G_net -S $SeqSim -Y 0 -a 0.15 -b 0.1 --iter 3 -x seqsim
 	fname=`ls output/ -1t | head -1`
-	outpath=/home/shahin/Dropbox/Projects/HONEA/experiment/output/NAPA/sorted/Family_$instance_id/TAME_alpha=0.1_it=3
+	outpath=/home/shahin/Dropbox/Projects/HONEA/experiment/output/NAPA/sorted/Family_$instance_id/TAME_alpha=0.15
 	mkdir -p $outpath
 	mv output/$fname $outpath/X.smat
+
+
+	rm output/*
+	./tri-match -t smat -H $H_net -G $G_net -S $SeqSim -Y 0 -a 0.5 -b 0.1 --iter 3 -x seqsim
+	fname=`ls output/ -1t | head -1`
+	outpath=/home/shahin/Dropbox/Projects/HONEA/experiment/output/NAPA/sorted/Family_$instance_id/TAME_alpha=0.5
+	mkdir -p $outpath
+	mv output/$fname $outpath/X.smat
+
+
+	rm output/*
+	./tri-match -t smat -H $H_net -G $G_net -S $SeqSim -Y 0 -a 0.85 -b 0.1 --iter 3 -x seqsim
+	fname=`ls output/ -1t | head -1`
+	outpath=/home/shahin/Dropbox/Projects/HONEA/experiment/output/NAPA/sorted/Family_$instance_id/TAME_alpha=0.85
+	mkdir -p $outpath
+	mv output/$fname $outpath/X.smat
+
 done
 
 
