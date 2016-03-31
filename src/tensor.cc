@@ -647,7 +647,9 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 	Delta node_delta;
 
+	vector<double> weights;
 	for (i = 0; i < align->match_no; i++) {
+
 		align->left_match[i] = (int)mi[i];
 		align->right_match[i] = (int)mj[i];
 
@@ -661,8 +663,13 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		align->left_project[align->right_match[i]] = align->left_match[i];
 		align->right_project[align->left_match[i]] = align->right_match[i];
 
+		weights.push_back(temp_x[align->left_match[i]*this->n2+align->right_match[i]]);
 		temp_x[align->left_match[i]*this->n2+align->right_match[i]] = 0;
 	}
+/*	sort(weights.begin(), weights.end());
+	for (i = 0; i < align->match_no; i++) {
+		printf("%e\n", weights[i]);
+	}*/
 /*	computeMatchDeg(align->left_match, align->right_match);*/
 
 
@@ -678,11 +685,15 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	align->conserved_triangles = align->conserved_triangles / 3;
 	align->conserved_edges = align->conserved_edges / 2;
 
+	align->expected_edge = (double)align->conserved_edges / align->match_no;
 	align->expected_tri = (double)align->conserved_triangles / align->match_no;
 	align->expected_NSim = (double)align->NSim / align->match_no;
+	align->expected_SeqSim = (double)align->seqsim / align->match_no;
 
+	align->expected_edge_avg = align->expected_edge;
 	align->expected_tri_avg = align->expected_tri;
 	align->expected_NSim_avg = align->expected_NSim;
+	align->expected_SeqSim_avg = align->expected_SeqSim;
 
 	printf("\tInitial Edges = %ld\n", align->conserved_edges);
 	printf("\tInitial Triangles = %ld\n", align->conserved_triangles);
@@ -818,6 +829,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		stable_sort(match_degree.begin(), match_degree.end(), scoreDeg_cmp);
 
 
+		printf("Mean Tri = %f, Mean Tri Avg = %f, Mean Nsim = %f, Mean Nsim Avg = %f\n", align->expected_tri, align->expected_tri_avg, align->expected_NSim, align->expected_NSim_avg);
+
 		/*********************************************
 		 *   Process each match in the given order
 		*********************************************/
@@ -938,23 +951,33 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		align->conserved_triangles = align->conserved_triangles / 3;
 		align->conserved_edges = align->conserved_edges / 2;
 
-		if(fabs(Delta_tri) > 0 && fabs(Delta_NSim) > 0) {
+
+
+		if(fabs(Delta_tri) > 0) {
 			align->expected_tri = fabs((double)Delta_tri) / align->match_no;
+		}
+		if(fabs(Delta_NSim) > 0) {
 			align->expected_NSim = fabs((double)Delta_NSim) / align->match_no;
 		}
-
+		if(fabs(Delta_seqsim) > 0) {
+			align->expected_SeqSim = fabs((double)Delta_seqsim) / align->match_no;
+		}
 
 /*
 		align->expected_tri_avg = (it*align->expected_tri_avg + align->expected_tri) / (it+1);
 		align->expected_NSim_avg = (it*align->expected_NSim_avg + align->expected_NSim) / (it+1);
 
 */
-
-		align->expected_tri_avg = pow(pow(align->expected_tri_avg, it)*align->expected_tri, 1.0/(it+1));
-		align->expected_NSim_avg = pow(pow(align->expected_NSim_avg, it)*align->expected_NSim, 1.0/(it+1));
-
-
-		printf("Tri: Exp=%f, Exp_Avg = %f\tNSim: Exp = %f, Exp_Avg = %f\n", align->expected_tri, align->expected_tri_avg, align->expected_NSim, align->expected_NSim_avg);
+		if(it == 0) {
+			align->expected_tri_avg = align->expected_tri;
+			align->expected_NSim_avg = align->expected_NSim;
+			align->expected_SeqSim_avg = align->expected_SeqSim;
+		}
+		else {
+			align->expected_tri_avg = pow(pow(align->expected_tri_avg, it)*align->expected_tri, 1.0/(it+1));
+			align->expected_NSim_avg = pow(pow(align->expected_NSim_avg, it)*align->expected_NSim, 1.0/(it+1));
+			align->expected_SeqSim_avg = pow(pow(align->expected_SeqSim_avg, it)*align->expected_SeqSim, 1.0/(it+1));
+		}
 
 		char x_path[1024];
 		sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_beta=%.2e_X_postIT=%d.smat", output_path, prefix, sparsity_type, alpha, beta, it);
@@ -1023,6 +1046,7 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align, int cycle) {
 		new_move.delta.seqsim = delta_gain.seqsim - delta_loss.seqsim;//pruned_w[this->n2 * new_move.e[0][0] + new_move.e[0][1]] - pruned_w[this->n2 * align->left_match[new_move.m_id[0]] + align->right_match[new_move.m_id[0]]];
 		new_move.delta.ortho_count = delta_gain.ortho_count - delta_loss.ortho_count;//(pruned_w[this->n2 * new_move.e[0][0] + new_move.e[0][1]] > 0? 1:0) - (pruned_w[this->n2 * align->left_match[new_move.m_id[0]] + align->right_match[new_move.m_id[0]]] > 0? 1:0);
 		new_move.delta.NSim = delta_gain.NSim - delta_loss.NSim;
+		new_move.delta.tri_weight = delta_gain.tri_weight - delta_loss.tri_weight;
 	}
 	else  {
 		// Aggregated removal cost and update alignment with the new move
@@ -1036,6 +1060,7 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align, int cycle) {
 			new_move.delta.seqsim -= delta_loss.seqsim;
 			new_move.delta.ortho_count -= delta_loss.ortho_count;
 			new_move.delta.NSim -= delta_loss.NSim;
+			new_move.delta.tri_weight -= delta_loss.tri_weight;
 
 			new_mi[new_move.m_id[k]] = new_move.e[k][0];
 			new_mj[new_move.m_id[k]] = new_move.e[k][1];
@@ -1089,6 +1114,7 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align, int cycle) {
 			new_move.delta.seqsim += delta_gain.seqsim;
 			new_move.delta.ortho_count += delta_gain.ortho_count;
 			new_move.delta.NSim += delta_gain.NSim;
+			new_move.delta.tri_weight += delta_gain.tri_weight;
 		}
 /*		printf("\tStep 3 = %lf\n", new_move.new_move.delta.triangle);*/
 
@@ -1177,7 +1203,19 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align, int cycle) {
 
 /*	new_move.delta.score = alpha*(new_move.delta.triangle / (double)align->conserved_triangles) + (1-alpha)*( new_move.delta.NSim / align->NSim );*/
 
-	new_move.delta.score = align->triWeight*new_move.delta.triangle + align->NSimWeight*new_move.delta.NSim;
+/*	new_move.delta.score = align->triWeight*new_move.delta.triangle + align->NSimWeight*new_move.delta.NSim;*/
+/*	new_move.delta.score = (alpha)*((double)new_move.delta.triangle/align->conserved_triangles + (double)new_move.delta.edge/align->conserved_edges)/2 + (1-alpha)*(new_move.delta.NSim / align->NSim);*/
+
+
+
+
+
+
+	new_move.delta.score = (alpha)*((double)new_move.delta.triangle/align->expected_tri) + (1-alpha)*(new_move.delta.NSim / align->expected_NSim);
+
+
+
+/*	new_move.delta.score = (alpha)*((double)new_move.delta.tri_weight);*/
 
 
 	return new_move.delta.score;
@@ -1357,14 +1395,14 @@ eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, 
 	 * *******************************************/	 
 	// Export full matrix X, only it is not a post-processing only run
 	timer.tic();
-	if (0 < max_it) {
+/*	if (0 < max_it) {
 		X = (reshape(best_x, n2, n1)).t();
 		sprintf(x_path, "%s/%s_alpha=%.2e_beta=%.2e_X.mat", output_path, prefix, alpha, beta);
 		X.save(x_path, raw_ascii);
 		printf("\t\t\tdt full export = %f\n", timer.toc());
-	}
+	}*/
 
-	alignment* result = postprocess(best_x.memptr(), 20, 200, 50, 0);
+	alignment* result = postprocess(best_x.memptr(), 10, 200, 50, 0);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
 
@@ -1459,7 +1497,7 @@ Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int
 	delta.ortho_count = delta.seqsim > 0? 1:0;
 	delta.NSim = delta.seqsim;
 
-	double counter = 0;
+	double counter = 0, tri_weight = 0;
 	long TriDeg_counter;
 	for(j = 0; j < mi.size(); j++) {
 		if(i == j)
@@ -1493,6 +1531,12 @@ Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int
 					if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
 						delta.triangle ++;
 						TriDeg_counter ++;
+/*
+						tri_weight += (1 + max(pruned_w[this->n2*mi[j] + mj[j]] + pruned_w[this->n2*mi[k] + mj[k]],
+								pruned_w[this->n2*mi[j] + mj[k]] + pruned_w[this->n2*mi[k] + mj[j]]));
+*/
+						tri_weight += (1 + max((pruned_w[this->n2*mi[j] + mj[j]] / (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[j]))) + (pruned_w[this->n2*mi[k] + mj[k]] / (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[k]))),
+								(pruned_w[this->n2*mi[j] + mj[k]]/ (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[k]))) + (pruned_w[this->n2*mi[k] + mj[j]]))/ (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[j])));
 					}
 				}
 			}
@@ -1507,6 +1551,7 @@ Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int
 
 /*	printf("SeqSim = %f, NSim Counter = %f\n", delta.NSim, counter);*/
 	delta.NSim += counter;
+	delta.tri_weight = tri_weight;
 	return delta;
 }
 
@@ -1522,7 +1567,7 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 	delta.seqsim = pruned_w[this->n2*e[0] + e[1]];
 	delta.ortho_count = delta.seqsim > 0? 1:0;
 	delta.NSim = delta.seqsim;
-	double counter = 0;
+	double counter = 0, tri_weight = 0;
 
 	long TriDeg_counter;
 	for(j = 0; j < mi.size(); j++) {
@@ -1556,6 +1601,15 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 					if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
 						delta.triangle ++;
 						TriDeg_counter ++;
+/*
+						tri_weight += (1 + max(pruned_w[this->n2*mi[j] + mj[j]] + pruned_w[this->n2*mi[k] + mj[k]],
+								pruned_w[this->n2*mi[j] + mj[k]] + pruned_w[this->n2*mi[k] + mj[j]]));
+*/
+						tri_weight += (1 + max((pruned_w[this->n2*mi[j] + mj[j]] / (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[j]))) + (pruned_w[this->n2*mi[k] + mj[k]] / (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[k]))),
+								(pruned_w[this->n2*mi[j] + mj[k]]/ (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[k]))) + (pruned_w[this->n2*mi[k] + mj[j]]))/ (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[j])));
+
+
+
 					}
 				}
 			}
@@ -1568,7 +1622,7 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 
 /*	printf("SeqSim = %f, NSim Counter = %f\n", delta.NSim, counter);*/
 	delta.NSim += counter;
-
+	delta.tri_weight = tri_weight;
 
 	return delta;
 }
