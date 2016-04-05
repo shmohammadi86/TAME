@@ -49,7 +49,7 @@ struct alignment {
 	unsigned long int conserved_triangles;
 	double seqsim;
 	int ortho_count;
-	double NSim;
+	double NSim, totalTriWeight;
 
 	double expected_edge, expected_tri, expected_NSim, expected_SeqSim;
 	double expected_edge_avg, expected_tri_avg, expected_NSim_avg, expected_SeqSim_avg;
