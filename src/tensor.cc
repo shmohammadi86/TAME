@@ -606,7 +606,7 @@ void ProdTensor::addPref(alignment* align, double *weights, int B) {
 alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, int seqDeg, double seqSim_threshold) {
 	printf("Post-processing ... \n");
 
-	register unsigned int i, i_prime, j, j_prime, k, k_prime, l, s, it;
+	register unsigned int i, i_prime, j, j_prime, k, l, s, it;
 	alignment *align = new alignment;
 
 
@@ -620,6 +620,36 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		if(pruned_w[i] < seqSim_threshold)
 			pruned_w[i] = 0;
 	}
+
+/*	printf("Normalizing pruned_w ... ");
+	double *d_G = (double *)calloc(G->n, sizeof(double));
+	double *d_H = (double *)calloc(H->n, sizeof(double));
+
+	for(i = 0; i < G->n; i++) {
+		for(j = 0; j < H->n; j++) {
+			d_G[i] += pruned_w[i*H->n + j];
+			d_H[j] += pruned_w[i*H->n + j];
+		}
+	}
+
+	for(i = 0; i < G->n; i++) {
+		for(j = 0; j < H->n; j++) {
+			if(pruned_w[i*H->n + j] > 0)
+				pruned_w[i*H->n + j] = pruned_w[i*H->n + j] / (sqrt(d_G[i]*d_H[j]));
+		}
+	}
+	printf("done\n");*/
+
+	double max_w = -1;
+	for(i = 0; i < G->n*H->n; i++) {
+		if(pruned_w[i] > max_w) {
+			max_w = pruned_w[i];
+		}
+	}
+	for(i = 0; i < G->n*H->n; i++) {
+		pruned_w[i] = pruned_w[i] / max_w;
+	}
+
 
 	double *temp_x = new double[this->n];
 	memcpy(temp_x, x_final, this->n*sizeof(double));
@@ -673,7 +703,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 /*	computeMatchDeg(align->left_match, align->right_match);*/
 
 
-	align->conserved_edges = align->conserved_triangles = align->seqsim = align->ortho_count = align->NSim = 0;
+	align->conserved_edges = align->conserved_triangles = align->seqsim = align->ortho_count = align->NSim = align->totalTriWeight = 0;
 	for (l = 0; l < align->match_no; l++) {
 		node_delta = Delta_removeMatch(align->left_match, align->right_match, l);
 		align->conserved_edges += node_delta.edge;
@@ -681,7 +711,9 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		align->seqsim += node_delta.seqsim;
 		align->NSim += node_delta.NSim;
 		align->ortho_count += node_delta.ortho_count;
+		align->totalTriWeight += node_delta.tri_weight;
 	}
+
 	align->conserved_triangles = align->conserved_triangles / 3;
 	align->conserved_edges = align->conserved_edges / 2;
 
@@ -700,6 +732,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	printf("\tInitial SeqSim = %f\n", align->seqsim);
 	printf("\tInitial NSim = %f\n", align->NSim);
 	printf("\tInitial Ortho = %d\n", align->ortho_count);
+	printf("\tInitial TriWeight = %f\n", align->totalTriWeight);
+
 
 
 	/****************************************
@@ -714,15 +748,15 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	addPref(align, pruned_w, seqDeg);
 
 
-/*
-	// Add square forming candidates to the Pref sets
+
+/*	// Add square forming candidates to the Pref sets
 	printf("\tAdding square forming pairs to the Pref sets\n");
 	for(s = 0; s < align->match_no; s++) {
 		i = align->left_match[s]; i_prime = align->right_match[s];
 		for(l = 0; l < align->match_no; l++) {
 			j = align->left_match[l]; j_prime = align->right_match[l];
 			if(G->getEdge(i, j)) {
-				for (k_prime = 0; k_prime < H->n; k_prime++) {
+				for (register int k_prime = 0; k_prime < H->n; k_prime++) {
 					if(H->getEdge(i_prime, k_prime) && align->left_project[k_prime] == -1) {
 						align->PrefH[l].push_back(k_prime);
 					}
@@ -736,8 +770,29 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 				}
 			}
 		}
+	}*/
+
+/*	for(l = 0; l < align->match_no; l++) {
+		for(i = 0; i < G->n; i++) {
+			if(G->getEdge(i, align->left_match[l]))
+				align->PrefG[l].push_back(i);
+		}
+		for(i_prime = 0; i_prime < H->n; i_prime++) {
+			if(H->getEdge(i_prime, align->right_match[l]))
+				align->PrefH[l].push_back(i_prime);
+		}
+	}*/
+
+
+	for(l = 0; l < align->match_no; l++) {
+		for(i = 0; i < G->n; i++) {
+			align->PrefG[l].push_back(i);
+		}
+		for(j = 0; j < H->n; j++) {
+			align->PrefH[l].push_back(j);
+		}
 	}
-*/
+
 
 	vector<int>::iterator last;
 	for(l = 0; l < align->match_no; l++) {
@@ -751,7 +806,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	}
 
 
-/*	vector<int> G_PrefD, H_PrefD;
+	vector<int> G_PrefD, H_PrefD;
 	for (i = 0; i < align->match_no; i++) {
 		G_PrefD.push_back(align->PrefG[i].size());
 		H_PrefD.push_back(align->PrefH[i].size());
@@ -760,7 +815,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 	sort(H_PrefD.begin(), H_PrefD.end());
 
 
-	printf("AFTER ALL::\n");
+/*	printf("AFTER ALL::\n");
 	for (i = 0; i < align->match_no; i++) {
 		printf("G = %d, H = %d\n", G_PrefD[i], H_PrefD[i]);
 	}*/
@@ -783,8 +838,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		best_move.e[i].resize(2); // reserve size for end points of matching edges
 	}
 
-	double total_improvement = 0, Delta_NSim = 0, Delta_seqsim = 0;
-	long Delta_tri = 0, Delta_edge = 0, Delta_ortho;
+	double total_improvement = 0, Delta_NSim = 0, Delta_seqsim = 0, Delta_triWeight = 0;
+	long Delta_tri = 0, Delta_edge = 0, Delta_ortho = 0;
 
 	vector<Match_deg> match_degree;
 	match_degree.resize(align->match_no);
@@ -935,11 +990,12 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 				Delta_seqsim += best_move.delta.seqsim;
 				Delta_NSim += best_move.delta.NSim;
 				Delta_ortho += best_move.delta.ortho_count;
+				Delta_triWeight += best_move.delta.tri_weight;
 			}
 		}
 
 
-		align->conserved_edges = align->conserved_triangles = align->seqsim = align->ortho_count = align->NSim = 0;
+		align->conserved_edges = align->conserved_triangles = align->seqsim = align->ortho_count = align->NSim = align->totalTriWeight = 0;
 		for (l = 0; l < align->match_no; l++) {
 			node_delta = Delta_removeMatch(align->left_match, align->right_match, l);
 			align->conserved_edges += node_delta.edge;
@@ -947,6 +1003,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 			align->seqsim += node_delta.seqsim;
 			align->NSim += node_delta.NSim;
 			align->ortho_count += node_delta.ortho_count;
+			align->totalTriWeight += node_delta.tri_weight;
 		}
 		align->conserved_triangles = align->conserved_triangles / 3;
 		align->conserved_edges = align->conserved_edges / 2;
@@ -996,12 +1053,14 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 			printf("\tDelta SeqSim = %f\n", Delta_seqsim);
 			printf("\tDelta NSim = %f\n", Delta_NSim);
 			printf("\tDelta Ortho = %ld\n", Delta_ortho);
+			printf("\tDelta triWeight = %f\n", Delta_triWeight);
 
 			printf("\tTotal Edges = %ld\n", align->conserved_edges);
 			printf("\tTotal Triangles = %ld\n", align->conserved_triangles);
 			printf("\tTotal SeqSim = %f\n", align->seqsim);
 			printf("\tTotal NSim = %f\n", align->NSim);
 			printf("\tTotal Ortho = %d\n", align->ortho_count);
+			printf("\tTotal TriWeight = %f\n", align->totalTriWeight);
 		}
 		else {
 			printf("No more improvement during a whole iteration. Exiting now.");
@@ -1211,12 +1270,16 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align, int cycle) {
 
 
 
-	new_move.delta.score = (alpha)*((double)new_move.delta.triangle/align->expected_tri) + (1-alpha)*(new_move.delta.NSim / align->expected_NSim);
+/*	new_move.delta.score = (alpha)*((double)new_move.delta.triangle/align->expected_tri) + (1-alpha)*(new_move.delta.NSim / align->expected_NSim);*/
 
 
 
-/*	new_move.delta.score = (alpha)*((double)new_move.delta.tri_weight);*/
+/*	new_move.delta.score = (alpha)*((double)new_move.delta.tri_weight / align->totalTriWeight) + (1-alpha)*(new_move.delta.seqsim / align->seqsim);*/
 
+
+/*	new_move.delta.score = new_move.delta.triangle;*/
+
+	new_move.delta.score = new_move.delta.tri_weight;
 
 	return new_move.delta.score;
 }
@@ -1395,12 +1458,12 @@ eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, 
 	 * *******************************************/	 
 	// Export full matrix X, only it is not a post-processing only run
 	timer.tic();
-/*	if (0 < max_it) {
+	if (0 < max_it) {
 		X = (reshape(best_x, n2, n1)).t();
 		sprintf(x_path, "%s/%s_alpha=%.2e_beta=%.2e_X.mat", output_path, prefix, alpha, beta);
 		X.save(x_path, raw_ascii);
 		printf("\t\t\tdt full export = %f\n", timer.toc());
-	}*/
+	}
 
 	alignment* result = postprocess(best_x.memptr(), 10, 200, 50, 0);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
@@ -1535,8 +1598,11 @@ Delta ProdTensor::Delta_removeMatch(vector<int> mi, vector<int> mj, unsigned int
 						tri_weight += (1 + max(pruned_w[this->n2*mi[j] + mj[j]] + pruned_w[this->n2*mi[k] + mj[k]],
 								pruned_w[this->n2*mi[j] + mj[k]] + pruned_w[this->n2*mi[k] + mj[j]]));
 */
-						tri_weight += (1 + max((pruned_w[this->n2*mi[j] + mj[j]] / (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[j]))) + (pruned_w[this->n2*mi[k] + mj[k]] / (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[k]))),
-								(pruned_w[this->n2*mi[j] + mj[k]]/ (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[k]))) + (pruned_w[this->n2*mi[k] + mj[j]]))/ (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[j])));
+/*						tri_weight += (1 + max((pruned_w[this->n2*mi[j] + mj[j]] / (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[j]))) + (pruned_w[this->n2*mi[k] + mj[k]] / (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[k]))),
+								(pruned_w[this->n2*mi[j] + mj[k]]/ (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[k]))) + (pruned_w[this->n2*mi[k] + mj[j]]))/ (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[j])));*/
+
+						tri_weight += (alpha*1 + (1-alpha)*max(pruned_w[this->n2*mi[j] + mj[j]] + pruned_w[this->n2*mi[k] + mj[k]],
+								pruned_w[this->n2*mi[j] + mj[k]] + pruned_w[this->n2*mi[k] + mj[j]])/2);
 					}
 				}
 			}
@@ -1597,6 +1663,8 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 			for(k = j+1; k < mi.size(); k++) {
 				if(i == k)
 					continue;
+
+
 				if( (G->getEdge(e[0], mi[k]) && H->getEdge(e[1], mj[k])) ) {
 					if ( (G->getEdge(mi[j], mi[k]) && H->getEdge(mj[j], mj[k])) ) {
 						delta.triangle ++;
@@ -1605,9 +1673,13 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 						tri_weight += (1 + max(pruned_w[this->n2*mi[j] + mj[j]] + pruned_w[this->n2*mi[k] + mj[k]],
 								pruned_w[this->n2*mi[j] + mj[k]] + pruned_w[this->n2*mi[k] + mj[j]]));
 */
+/*
 						tri_weight += (1 + max((pruned_w[this->n2*mi[j] + mj[j]] / (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[j]))) + (pruned_w[this->n2*mi[k] + mj[k]] / (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[k]))),
 								(pruned_w[this->n2*mi[j] + mj[k]]/ (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[k]))) + (pruned_w[this->n2*mi[k] + mj[j]]))/ (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[j])));
+*/
 
+						tri_weight += (alpha*1 + (1-alpha)*max(pruned_w[this->n2*mi[j] + mj[j]] + pruned_w[this->n2*mi[k] + mj[k]],
+								pruned_w[this->n2*mi[j] + mj[k]] + pruned_w[this->n2*mi[k] + mj[j]])/2 );
 
 
 					}
