@@ -33,6 +33,7 @@ struct stats {
 	double correctness;
 };
 
+
 struct alignment {
 	vector<int> left_match; // left_match[e] is the vertex in G for the e^th match in the alignment
 	vector<int> right_match; // right_match[e] is the vertex in G for the e^th match in the alignment
