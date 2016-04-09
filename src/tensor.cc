@@ -793,6 +793,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		}*/
 
 
+		vector<int> left_candidates, right_candidates;
+
 		vector<int>::iterator last;
 		for(l = 0; l < align->match_no; l++) {
 			sort(align->PrefG[l].begin(), align->PrefG[l].end());
@@ -803,6 +805,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 			last = unique(align->PrefH[l].begin(), align->PrefH[l].end());
 			align->PrefH[l].erase(last, align->PrefH[l].end());
 		}
+
 
 
 /*
@@ -896,21 +899,51 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 /*			printf("<<<Match %d/%d>>>\n", d, align->match_no);*/
 
 			k = match_score[d].match_id;
+
+
+
 			best_move.move_no = 0;
 			bzero(&(best_move.delta), sizeof(Delta));
 			i = align->left_match[k]; i_prime = align->right_match[k];
 
+
+			// Initialize Candidate sets with PrefG/H and then add neighbors  of i and i' to the candidate sets
+		    left_candidates = align->PrefG[i_prime];
+
+			for(j = 0; j < n1; j++) {
+				if(G->getEdge(i, j)) {
+					left_candidates.push_back(j);
+				}
+			}
+
+			sort(left_candidates.begin(), left_candidates.end());
+			left_candidates.erase(unique(left_candidates.begin(), left_candidates.end()), left_candidates.end());
+
+
+
+			right_candidates = align->PrefH[i];
+
+			for(j_prime = 0; j_prime < n2; j_prime++) {
+				if(H->getEdge(i_prime, j_prime)) {
+					right_candidates.push_back(j);
+				}
+			}
+
+			sort(right_candidates.begin(), right_candidates.end());
+			right_candidates.erase(unique(right_candidates.begin(), right_candidates.end()), right_candidates.end());
+
+
 			left_unmatched.clear(); // Nodes on the left side (G) that are in Pref set of i' and are either matched/unmatched
- 			for(l = 0; l < align->PrefG[i_prime].size(); l++) {
-				j = align->PrefG[i_prime][l];
+ 			for(l = 0; l < left_candidates.size(); l++) {
+				j = left_candidates[l];
 				if(align->right_project[j] == -1) {
 					left_unmatched.push_back(j);
 				}
 			}
 
 			right_unmatched.clear();
-			for(l = 0; l < align->PrefH[i].size(); l++) {
-				j_prime = align->PrefH[i][l];
+			for(l = 0; l < right_candidates.size(); l++) {
+				j_prime = right_candidates[l];
 				if(align->left_project[j_prime] == -1) {
 					right_unmatched.push_back(j_prime);
 				}
@@ -960,24 +993,33 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 				// Prune based on preferred sets
 				// 1) Make sure j' \in PrefH(i)
-				for(s = 0; s < align->PrefH[i].size(); s++) {
-					if(align->PrefH[i][s] == (int)j_prime)
+/*				if(!binary_search(right_candidates.begin(), right_candidates.end(), j_prime)) {
+					continue;
+				}*/
+				/*for(s = 0; s < right_candidates.size(); s++) {
+					if(right_candidates[s] == (int)j_prime)
 						break;
 				}
-				if(s == align->PrefH[i].size())
+				if(s == right_candidates.size())
 					continue;
+				 */
 
-				// 1) Make sure j \in PrefG(i')
-				for(s = 0; s < align->PrefG[i_prime].size(); s++) {
+				// 2) Make sure j \in PrefG(i')
+				/*if(!binary_search(left_candidates.begin(), left_candidates.end(), j)) {
+					continue;
+				}*/
+
+				/*for(s = 0; s < left_candidates.size(); s++) {
 					if(align->PrefG[i_prime][s] == (int)j)
 						break;
 				}
 				if(s == align->PrefG[i].size())
 					continue;
+				 */
 
-				// prune based on seqsim, if needed
-
-				// Prune based on edges
+				if(!binary_search(left_candidates.begin(), left_candidates.end(), j) && !binary_search(right_candidates.begin(), right_candidates.end(), j_prime)) {
+					continue;
+				}
 
 				//printf("Swap %d <-> %d and %d <-> %d with %d <-> %d and %d <-> %d\n", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
 				evaluateMove(new_move, align, curr_cycle);
