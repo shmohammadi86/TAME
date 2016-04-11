@@ -67,6 +67,7 @@ struct Delta {
 
 	double score;
 	double tri_weight;
+	double topo_score, bio_score;
 };
 
 struct Move { // Encodes even-sized augmenting paths
