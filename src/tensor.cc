@@ -780,8 +780,8 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 				if(H->getEdge(i_prime, align->right_match[l]))
 					align->PrefH[l].push_back(i_prime);
 			}
-		}*/
-
+		}
+*/
 
 /*		for(l = 0; l < align->match_no; l++) {
 			for(i = 0; i < G->n; i++) {
@@ -890,11 +890,10 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		stable_sort(match_score.begin(), match_score.end(), scoreDeg_cmp);
 
 
-		printf("Mean Tri = %f, Mean Tri Avg = %f, Mean Nsim = %f, Mean Nsim Avg = %f\n", align->expected_tri, align->expected_tri_avg, align->expected_NSim, align->expected_NSim_avg);
-
 		/*********************************************
 		 *   Process each match in the given order
 		*********************************************/
+		double Delta_topo = 0, Delta_bio = 0;
 		for(unsigned int d = 0; d < align->match_no; d++) {
 /*			printf("<<<Match %d/%d>>>\n", d, align->match_no);*/
 
@@ -959,9 +958,15 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 				//printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
 				evaluateMove(new_move, align, curr_cycle);
-				if(best_move.delta.score < new_move.delta.score ) {
+				if(best_move.delta.topo_score < new_move.delta.topo_score) {
 					copyMove(best_move, new_move);
 				}
+				else if(best_move.delta.topo_score == new_move.delta.topo_score && best_move.delta.bio_score < new_move.delta.bio_score) {
+					copyMove(best_move, new_move);
+				}
+/*				if(best_move.delta.score < new_move.delta.score ) {
+					copyMove(best_move, new_move);
+				}*/
 			}
 
 			new_move.e[0][0] = i;
@@ -971,9 +976,15 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 				//printf("Changing %d <-> %d to %d <-> %d\n", i, i_prime, new_move.e[0][0], new_move.e[0][1]); fflush(stdout);
 				evaluateMove(new_move, align, curr_cycle);
-				if(best_move.delta.score < new_move.delta.score ) {
+				if(best_move.delta.topo_score < new_move.delta.topo_score) {
 					copyMove(best_move, new_move);
 				}
+				else if(best_move.delta.topo_score == new_move.delta.topo_score && best_move.delta.bio_score < new_move.delta.bio_score) {
+					copyMove(best_move, new_move);
+				}
+/*				if(best_move.delta.score < new_move.delta.score ) {
+					copyMove(best_move, new_move);
+				}*/
 			}
 
 			// Now look at already matched edges and evaluate them as swap candidates
@@ -1023,14 +1034,23 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 				//printf("Swap %d <-> %d and %d <-> %d with %d <-> %d and %d <-> %d\n", i, i_prime, j, j_prime, new_move.e[0][0], new_move.e[0][1], new_move.e[1][0], new_move.e[1][1]); fflush(stdout);
 				evaluateMove(new_move, align, curr_cycle);
+				if(best_move.delta.topo_score < new_move.delta.topo_score) {
+					copyMove(best_move, new_move);
+				}
+				else if(best_move.delta.topo_score == new_move.delta.topo_score && best_move.delta.bio_score < new_move.delta.bio_score) {
+					copyMove(best_move, new_move);
+				}
+/*
 				if(best_move.delta.score < new_move.delta.score ) {
 					copyMove(best_move, new_move);
 				}
+*/
 			}
-			if(0 < best_move.delta.score) {
+
+			if(0 < best_move.delta.topo_score || 0 < best_move.delta.bio_score) {
 				applyMove(best_move, align);
 
-				// cHECK FOR INCONSISTENCIES ...
+/*				// cHECK FOR INCONSISTENCIES ...
 				vector<int> G_counts(this->n1, 0);
 				for(s = 0; s < align->match_no; s++) {
 					G_counts[align->left_match[s]]++;
@@ -1069,16 +1089,19 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 					if(H_counts2[align->right_project[s]] > 1) {
 						printf("*** Right proj inconsistency for vertex %d in match %d\n", align->right_project[s], s);
 					}
-				}
+				}*/
 
 /*				computeMatchDeg(align->left_match, align->right_match);*/
-				total_improvement += best_move.delta.score;
-				Delta_edge += best_move.delta.edge;
-				Delta_tri += best_move.delta.triangle;
-				Delta_seqsim += best_move.delta.seqsim;
+/*
 				Delta_NSim += best_move.delta.NSim;
 				Delta_ortho += best_move.delta.ortho_count;
 				Delta_triWeight += best_move.delta.tri_weight;
+*/
+				Delta_edge += best_move.delta.edge;
+				Delta_tri += best_move.delta.triangle;
+				Delta_seqsim += best_move.delta.seqsim;
+				Delta_bio += best_move.delta.bio_score;
+				Delta_topo += best_move.delta.topo_score;
 			}
 		}
 
@@ -1126,7 +1149,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 		char x_path[1024];
 		sprintf(x_path, "%s/%s_sparsity=%d_alpha=%.2e_beta=%.2e_X_postIT=%d.smat", output_path, prefix, sparsity_type, alpha, beta, it);
-		printf("Exporting current alignment to %s ... ", x_path);
+		printf("Exporting current alignment to %s ... \n", x_path);
 		FILE *fd = fopen(x_path, "w");
 		fprintf(fd, "%d\t%d\t%d\n", this->n1, this->n2, (int)align->match_no);
 		for(j = 0; j < (unsigned int)align->match_no; j++) {
@@ -1134,21 +1157,16 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		}
 		fclose(fd);
 
-		if(0 < total_improvement) {
-			printf("Total improvement = %lf\n", total_improvement);
+		if(0 < Delta_bio || 0 < Delta_topo) {
+			printf("\tDelta Bio = %f\n", Delta_bio);
+			printf("\tDelta Topo = %f\n", Delta_topo);
 			printf("\tDelta Edges = %ld\n", Delta_edge);
 			printf("\tDelta Triangles = %ld\n", Delta_tri);
 			printf("\tDelta SeqSim = %f\n", Delta_seqsim);
-			printf("\tDelta NSim = %f\n", Delta_NSim);
-			printf("\tDelta Ortho = %ld\n", Delta_ortho);
-			printf("\tDelta triWeight = %f\n", Delta_triWeight);
 
 			printf("\tTotal Edges = %ld\n", align->conserved_edges);
 			printf("\tTotal Triangles = %ld\n", align->conserved_triangles);
 			printf("\tTotal SeqSim = %f\n", align->seqsim);
-			printf("\tTotal NSim = %f\n", align->NSim);
-			printf("\tTotal Ortho = %d\n", align->ortho_count);
-			printf("\tTotal TriWeight = %f\n", align->totalTriWeight);
 		}
 		else {
 			printf("No more improvement during a whole iteration. Exiting now.");
@@ -1362,12 +1380,14 @@ double ProdTensor::evaluateMove(Move &new_move, alignment* align, int cycle) {
 
 
 
-/*	new_move.delta.score = (alpha)*((double)new_move.delta.tri_weight / align->totalTriWeight) + (1-alpha)*(new_move.delta.seqsim / align->seqsim);*/
+/*	new_move.delta.score = (alpha)*((double)new_move.delta.tri_weight) + (1-alpha)*(new_move.delta.seqsim);*/
 
+	new_move.delta.bio_score  = new_move.delta.seqsim;
+	new_move.delta.topo_score = new_move.delta.tri_weight;
 
 /*	new_move.delta.score = new_move.delta.triangle;*/
 
-	new_move.delta.score = new_move.delta.tri_weight;
+/*	new_move.delta.score = new_move.delta.tri_weight;*/
 
 	return new_move.delta.score;
 }
@@ -1574,12 +1594,12 @@ eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, 
 	 * *******************************************/	 
 	// Export full matrix X, only it is not a post-processing only run
 	timer.tic();
-/*	if (0 < max_it) {
+	if (0 < max_it) {
 		X = (reshape(best_x, n2, n1)).t();
 		sprintf(x_path, "%s/%s_alpha=%.2e_beta=%.2e_X.mat", output_path, prefix, alpha, beta);
 		X.save(x_path, raw_ascii);
 		printf("\t\t\tdt full export = %f\n", timer.toc());
-	}*/
+	}
 
 	alignment* result = postprocess(best_x.memptr(), 10, 200, 50, 0);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
@@ -1794,7 +1814,7 @@ Delta ProdTensor::Delta_addMatch(vector<int> mi, vector<int> mj, unsigned int i,
 								(pruned_w[this->n2*mi[j] + mj[k]]/ (G->getVertexDegree(mi[j]) * H->getVertexDegree(mj[k]))) + (pruned_w[this->n2*mi[k] + mj[j]]))/ (G->getVertexDegree(mi[k]) * H->getVertexDegree(mj[j])));
 */
 
-						tri_weight += (alpha*1 + (1-alpha)*max(pruned_w[this->n2*mi[j] + mj[j]] + pruned_w[this->n2*mi[k] + mj[k]],
+						tri_weight += (alpha*1+ (1-alpha)*max(pruned_w[this->n2*mi[j] + mj[j]] + pruned_w[this->n2*mi[k] + mj[k]],
 								pruned_w[this->n2*mi[j] + mj[k]] + pruned_w[this->n2*mi[k] + mj[j]])/2 );
 
 
