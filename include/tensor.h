@@ -95,7 +95,7 @@ class ProdTensor {
 public:
 	ProdTensor(Graph *G, TriangleCounts* T_G, Graph *H, TriangleCounts* T_H, double *w, Sparsity_Type sparsity_flag, char *output_path, char *prefix);
 	void impTTV(double *new_x, double *x);
-	eigen* issHOPM(int max_it, double alpha, double beta, double epsilon, double *w, double *x0, int init_type);
+	eigen* issHOPM(int max_it, double alpha, double beta, double epsilon, double *w, double *x0, int init_type, int b_seq, int b_topo, int post_iter);
 	alignment* postprocess(double *x_final, int max_iter, int topoDeg, int seqDeg, double seqSim_threshold);
 	void addPref(alignment* align, double *weights, int B);
 	

@@ -606,7 +606,7 @@ void ProdTensor::addPref(alignment* align, double *weights, int B) {
 alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, int seqDeg, double seqSim_threshold) {
 	printf("Post-processing ... \n");
 
-	register unsigned int i, i_prime, j, j_prime, k, l, s, it;
+	register unsigned int i, i_prime, j, j_prime, k, l, it;
 	alignment *align = new alignment;
 
 
@@ -842,7 +842,7 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 		best_move.e[i].resize(2); // reserve size for end points of matching edges
 	}
 
-	double total_improvement = 0, Delta_NSim = 0, Delta_seqsim = 0, Delta_triWeight = 0;
+	double Delta_NSim = 0, Delta_seqsim = 0;
 	long Delta_tri = 0, Delta_edge = 0, Delta_ortho = 0;
 
 	vector<Match_deg> match_score;
@@ -859,7 +859,6 @@ alignment* ProdTensor::postprocess(double *x_final, int max_iter, int topoDeg, i
 
 
 		printf("Iteration %d \n", it);
-		total_improvement = 0;
 		Delta_tri = Delta_edge = Delta_seqsim = Delta_NSim = Delta_ortho = 0;
 
 		align->edgeWeight = alpha / (double)align->expected_edge_avg;
@@ -1442,7 +1441,7 @@ void ProdTensor::applyMove(Move &best_move, alignment* align) {
 	}
 }
 
-eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, double epsilon, double *w, double *x0, int init_type) {
+eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, double epsilon, double *w, double *x0, int init_type, int b_seq, int b_topo, int post_iter) {
 	
 	register unsigned int i, j;
 	char x_path[1024];
@@ -1594,14 +1593,14 @@ eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, 
 	 * *******************************************/	 
 	// Export full matrix X, only it is not a post-processing only run
 	timer.tic();
-	if (0 < max_it) {
+/*	if (0 < max_it) {
 		X = (reshape(best_x, n2, n1)).t();
 		sprintf(x_path, "%s/%s_alpha=%.2e_beta=%.2e_X.mat", output_path, prefix, alpha, beta);
 		X.save(x_path, raw_ascii);
 		printf("\t\t\tdt full export = %f\n", timer.toc());
-	}
+	}*/
 
-	alignment* result = postprocess(best_x.memptr(), 10, 200, 50, 0);
+	alignment* result = postprocess(best_x.memptr(), post_iter, b_topo, b_seq, 0);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
 	
 

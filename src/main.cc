@@ -23,14 +23,18 @@ void print_usage (FILE * stream, int exit_code)
 
 		 "\t-Y	--sparsity <level>\t\tSparsity level (0, 1, and 2).\n"
 
-    	 "\t-C	--continue <X.txt>\tContinues iterations starting from matrix stored in file.\n"
+    	 "\t-C	--continue <X.txt>\t\tContinues iterations starting from matrix stored in file.\n"
 		 "\t-x 	--x0 <uniform|random|seqsim>\tInitialization type (default=uniform).\n" 
 		 "\t-i 	--iter <its>\t\t\tNumber of iterations (default=100).\n"
 
 		 "\t-a 	--alpha <weight>\t\trelative weight of SeqSim/Triangles (default = 1.0).\n"
 		 "\t-b 	--beta <shift_val>\t\tShift value (default = 0.0).\n" 
-		 "\t-e 	--epsilon <eps>\t\t\tepsilon threshold (default=1e-16).\n" 		 
+		 "\t-e 	--epsilon <eps>\t\t\tepsilon threshold (default=1e-16).\n" 		
 		 
+		 "\t-p 	--b_seq <bSeq>\t\t\tb-matching degree for sequences (default=50).\n" 		
+		 "\t-q 	--b_topo <bSeq>\t\t\tb-matching degree for topolotgy (default=200).\n" 		
+		 "\t-I 	--post_iter <iter_count>\tnumber of iterations for post-processing step (default=10).\n" 		
+		  		 
 		 
 	);	     
     exit (exit_code);
@@ -56,6 +60,9 @@ int main(int argc, char **argv) {
 		{"epsilon",   1, NULL, 'e'},		
 		{"sparsity", 1, NULL, 'Y'},
 		{"continue", 1, NULL, 'C'},
+		{"b_seq", 1, NULL, 'p'},
+		{"b_topo", 1, NULL, 'q'},
+		{"post_iter", 1, NULL, 'I'},
 		{NULL,     0, NULL,  0 }		
 	};
 
@@ -69,6 +76,8 @@ int main(int argc, char **argv) {
 	double epsilon = 1e-06;
 	double val;
 	char full_path1[1024] = "", full_path2[1024] = "", seq_path[1024] = "";	
+	
+	int b_seq=50, b_topo=200, post_iter = 10;
 	
 	if(argc < 3)
    		print_usage (stdout, -1);
@@ -166,6 +175,18 @@ int main(int argc, char **argv) {
 				sparsity_type = (Sparsity_Type)atoi(optarg);
 				break;
 				
+			case 'p':
+				b_seq = atoi(optarg);
+				break;
+				
+			case 'q':
+				b_topo = atoi(optarg);
+				break;
+				
+			case 'I':
+				post_iter = atoi(optarg);
+				break;
+				
 			case '?':
 	    		print_usage (stdout, 1);
 				
@@ -173,6 +194,7 @@ int main(int argc, char **argv) {
 			    break;
 			
 			default:		/* Something else: unexpected. */
+				printf("Unknown option %c\n", next_option);
                 print_usage (stderr, -1);
 		}
     } while (next_option != -1);
@@ -374,7 +396,7 @@ int main(int argc, char **argv) {
 		pt.InitX(x0, init_type, w);
 	}
 
-	pt.issHOPM(max_it, alpha, beta, epsilon, w, x0, init_type);
+	pt.issHOPM(max_it, alpha, beta, epsilon, w, x0, init_type, b_seq, b_topo, post_iter);
 
 
 	delete T_G;
