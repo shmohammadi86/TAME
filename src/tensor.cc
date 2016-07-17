@@ -1594,12 +1594,12 @@ eigen *ProdTensor::issHOPM(int max_it, double weight_param, double shift_param, 
 	 * *******************************************/	 
 	// Export full matrix X, only it is not a post-processing only run
 	timer.tic();
-	if (0 < max_it) {
+/*	if (0 < max_it) {
 		X = (reshape(best_x, n2, n1)).t();
 		sprintf(x_path, "%s/%s_alpha=%.2e_beta=%.2e_X.mat", output_path, prefix, alpha, beta);
 		X.save(x_path, raw_ascii);
 		printf("\t\t\tdt full export = %f\n", timer.toc());
-	}
+	}*/
 
 	alignment* result = postprocess(best_x.memptr(), 10, 200, 50, 0);
 	printf("After post processing:: Triangles = %ld, edges = %ld\n ", result->conserved_triangles, result->conserved_edges);
