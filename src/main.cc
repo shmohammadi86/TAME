@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
 	
 
   int next_option;
-  const char *const short_options = "hG:H:t:S:o:x:i:a:b:e:Y:C:";
+  const char *const short_options = "hG:H:t:S:o:x:i:a:b:e:Y:C:I:p:q:";
   const struct option long_options[] = {
 		{"help",   0, NULL, 'h'},
 		{"first",  1, NULL, 'G'},
@@ -199,6 +199,62 @@ int main(int argc, char **argv) {
 		}
     } while (next_option != -1);
 
+	
+	char *str = full_path1;
+	int len = strlen(str);
+	int status = 0;
+	register int i, j;
+	for(i = len-1; i >= 0; i--) {
+		if(str[i] == '.') {
+			status = 1;
+			break;
+		}
+		else if(str[i] == '/') {
+			status = 2;
+			break;
+		}		
+	}
+	if(status == 0)
+		strcpy(first, str);
+	else if(status == 2)
+		strcpy(first, str+i+1);
+	else {
+		for(j = i; j >=0; j--) {
+			if(str[j] == '/') {
+				break;
+			}	
+		}
+		strncpy(first, str+j+1, i-j-1);
+		
+	}
+
+
+	str = full_path2;
+	len = strlen(str);
+	status = 0;
+	for(i = len-1; i >= 0; i--) {
+		if(str[i] == '.') {
+			status = 1;
+			break;
+		}
+		else if(str[i] == '/') {
+			status = 2;
+			break;
+		}		
+	}
+	if(status == 0)
+		strcpy(second, str);
+	else if(status == 2)
+		strcpy(second, str+i+1);
+	else {
+		for(j = i; j >=0; j--) {
+			if(str[j] == '/') {
+				break;
+			}	
+		}
+		strncpy(second, str+j+1, i-j-1);		
+	}
+	
 	char *cptr = strrchr(full_path1, '/');	
 	strncpy(first, cptr+1, strlen(cptr)-5-(file_type==SMAT?1:0));
 	cptr = strrchr(full_path2, '/');
