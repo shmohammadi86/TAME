@@ -21,7 +21,7 @@ There are three example scripts to help you get a sense of how to start using TA
 
 1. *sparse_run.sh*: aligns yeast vs human interactome with sequence similarity in sparse mode.
 2. *dense_run.sh*: aligns yeast vs human interactome with sequence similarity in dense mode.
-3. *dense_run.sh*: aligns yeast vs human interactome without sequence similarity in dense mode.
+3. *dense_run_noPrior.sh*: aligns yeast vs human interactome without sequence similarity in dense mode.
 
 # Cite
 Mohammadi, S., Gleich, D. F., Kolda, T. G., & Grama, A. (2016). Triangular Alignment (TAME): A Tensor-based Approach for Higher-order Network Alignment. IEEE/ACM Transactions on Computational Biology and Bioinformatics (http://doi.org/10.1109/TCBB.2016.2595583)
