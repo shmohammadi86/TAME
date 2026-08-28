@@ -346,29 +346,57 @@ double *readSeqSim_SMAT(char *path) {
 	}
 	printf("Reading sequence similarities from SMAT file %s ...\n", path);
 
-	unsigned int n, m, ne;	
-	res = fscanf(fd,"%d %d %d", &m, &n, &ne);
-	printf("# m = %d\tn=%d\tnnz=%d\n", m, n, ne);
-	
-	int mem_size = m*n*sizeof(double);
-	w = (double *)calloc(1, mem_size);
-	if(w == NULL) {
-		fprintf(stderr, "readSeqSim:: Error allocating memory for w.\n");
+	// An SMAT file opens with "rows cols nnz". Reject anything else up front:
+	// a headerless triple list (for example a .evals file, which belongs to the
+	// tab reader) otherwise produces a bogus size and writes out of bounds.
+	unsigned int n = 0, m = 0, ne = 0;
+	res = fscanf(fd, "%u %u %u", &m, &n, &ne);
+	if(res != 3 || m == 0 || n == 0) {
+		fprintf(stderr, "readSeqSim_SMAT:: %s does not begin with a valid "
+		        "\"rows cols nnz\" header. If this is a tab-separated file "
+		        "keyed by node label, run with -t tab instead.\n", path);
+		fclose(fd);
 		return NULL;
 	}
-	
-	
+	printf("# m = %u\tn = %u\tnnz = %u\n", m, n, ne);
+
+	// m*n can exceed 2^31 for realistic interactomes; size_t throughout.
+	size_t mem_size = (size_t)m * (size_t)n * sizeof(double);
+	w = (double *)calloc(1, mem_size);
+	if(w == NULL) {
+		fprintf(stderr, "readSeqSim_SMAT:: Error allocating %zu bytes for w.\n",
+		        mem_size);
+		fclose(fd);
+		return NULL;
+	}
+
+
 	double val;
-	register int row = -1, col = -1;
-	
-	long line_no=0;
+	int row = -1, col = -1;
+
+	long line_no = 0;
 	while(!feof(fd)) {
 		res = fscanf(fd, "%d %d %lf", &row, &col, &val);
 		if(res == EOF)
 			break;
-		
+		if(res != 3) {
+			fprintf(stderr, "readSeqSim_SMAT:: malformed entry on line %ld of "
+			        "%s.\n", line_no + 2, path);
+			fclose(fd);
+			free(w);
+			return NULL;
+		}
+
 		line_no++;
-		w[n*row + col] = val;
+		if(row < 0 || (unsigned int)row >= m || col < 0 || (unsigned int)col >= n) {
+			fprintf(stderr, "readSeqSim_SMAT:: entry (%d, %d) on line %ld of %s "
+			        "falls outside the declared %u x %u matrix.\n",
+			        row, col, line_no + 1, path, m, n);
+			fclose(fd);
+			free(w);
+			return NULL;
+		}
+		w[(size_t)n * (size_t)row + (size_t)col] = val;
 	}
 
 	fclose(fd);		

@@ -363,8 +363,8 @@ int main(int argc, char **argv) {
 	}
 	if( w == NULL) {
 		fprintf(stderr, "Main:: Error reading sequence similarity file. Resetting to uniform prior\n");
-		long N = (G->n*H->n);
-		int mem_size = N*sizeof(double);
+		long N = ((long)G->n * (long)H->n);
+		size_t mem_size = (size_t)N * sizeof(double);
 		w = (double *)calloc(1, mem_size);
 		if(w == NULL) {
 			fprintf(stderr, "main:: Error allocating memory for w.\n");

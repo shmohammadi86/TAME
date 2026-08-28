@@ -1,0 +1,46 @@
+name: build
+
+on:
+  push:
+    branches: [release, master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: ubuntu / ${{ matrix.cxx }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cxx: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libarmadillo-dev libopenblas-dev liblapack-dev libomp-dev
+
+      - name: Build
+        run: make CXX=${{ matrix.cxx }}
+
+      - name: Smoke test
+        run: make check CXX=${{ matrix.cxx }}
+
+      - name: Malformed-input regression test
+        run: make check-badinput CXX=${{ matrix.cxx }}
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install armadillo libomp
+
+      - name: Build
+        run: |
+          make CXX=clang++ \
+               OPENMP="-Xpreprocessor -fopenmp -I$(brew --prefix libomp)/include" \
+               LDLIBS="-larmadillo -L$(brew --prefix libomp)/lib -lomp"

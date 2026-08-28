@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below."
+title: "TAME: Triangular AlignMEnt"
+abstract: >-
+  TAME globally aligns two networks by maximising the number of conserved
+  triangles. The objective is relaxed to a third-order tensor Z-eigenvector
+  problem, solved with a shifted symmetric higher-order power method, and
+  rounded to a one-to-one mapping by b-matching.
+type: software
+repository-code: "https://github.com/shmohammadi86/TAME"
+license: MIT
+authors:
+  - family-names: "Mohammadi"
+    given-names: "Shahin"
+    orcid: "https://orcid.org/0000-0001-8734-2326"
+  - family-names: "Gleich"
+    given-names: "David F."
+  - family-names: "Kolda"
+    given-names: "Tamara G."
+  - family-names: "Grama"
+    given-names: "Ananth"
+keywords:
+  - network alignment
+  - higher-order structure
+  - tensor eigenvector
+  - SS-HOPM
+  - comparative interactomics
+preferred-citation:
+  type: article
+  title: "Triangular Alignment (TAME): A Tensor-Based Approach for Higher-Order Network Alignment"
+  journal: "IEEE/ACM Transactions on Computational Biology and Bioinformatics"
+  volume: 14
+  issue: 6
+  start: 1446
+  end: 1458
+  year: 2017
+  doi: "10.1109/TCBB.2016.2595583"
+  authors:
+    - family-names: "Mohammadi"
+      given-names: "Shahin"
+    - family-names: "Gleich"
+      given-names: "David F."
+    - family-names: "Kolda"
+      given-names: "Tamara G."
+    - family-names: "Grama"
+      given-names: "Ananth"

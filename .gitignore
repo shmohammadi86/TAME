@@ -1,12 +1,14 @@
-output/
-refs/
-temp/
-results/
-*.tsv
-*~
+# build artifacts
 *.o
-*.xls
-*.xlsx
-*.png
-tri-match
-TAME_X.mat
+*.a
+/tri-match
+
+# run output
+/output/
+
+# editor / OS / IDE cruft
+*~
+.DS_Store
+.cproject
+.project
+.settings/
